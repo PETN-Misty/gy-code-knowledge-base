@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GY · 通用 CRUD API</title>
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ===== Header ===== */
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: #fff;
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+    }
+    .header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .header h1 small {
+      font-size: 14px;
+      font-weight: 400;
+      opacity: .7;
+      margin-left: 12px;
+    }
+    .header .badge {
+      background: rgba(255,255,255,.15);
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+    .watermark-badge {
+      display: inline-block;
+      background: #e94560;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 2px 10px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
+
+    /* ===== Layout ===== */
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 0; }
+
+    /* ===== Cards ===== */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #eee;
+      font-weight: 600;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-body { padding: 20px; }
+
+    /* ===== Table List ===== */
+    .table-list { list-style: none; }
+    .table-list li {
+      padding: 10px 14px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all .2s;
+    }
+    .table-list li:hover { border-color: #0f3460; background: #f8f9ff; }
+    .table-list li.active { border-color: #0f3460; background: #eef1ff; }
+    .table-list .table-name { font-weight: 600; }
+    .table-list .table-meta { font-size: 13px; color: #888; }
+
+    /* ===== Data Table ===== */
+    .data-table-wrap { overflow-x: auto; }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .data-table th {
+      background: #f7f8fa;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 2px solid #e8e8e8;
+      white-space: nowrap;
+    }
+    .data-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .data-table tr:hover td { background: #fafbff; }
+    .data-table .pk-cell { font-weight: 600; color: #0f3460; }
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 18px; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 500; cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-primary { background: #0f3460; color: #fff; }
+    .btn-primary:hover { background: #1a4a7a; }
+    .btn-danger { background: #e94560; color: #fff; }
+    .btn-danger:hover { background: #c73a52; }
+    .btn-success { background: #2ecc71; color: #fff; }
+    .btn-success:hover { background: #27ae60; }
+    .btn-sm { padding: 5px 12px; font-size: 13px; }
+    .btn-outline {
+      background: transparent; color: #0f3460;
+      border: 1px solid #0f3460;
+    }
+    .btn-outline:hover { background: #0f3460; color: #fff; }
+
+    /* ===== Form ===== */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 500;
+      margin-bottom: 4px; color: #555;
+    }
+    .form-control {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px;
+      transition: border-color .2s;
+    }
+    .form-control:focus { outline: none; border-color: #0f3460; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+
+    /* ===== Modal ===== */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); z-index: 1000;
+      justify-content: center; align-items: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: #fff; border-radius: 16px;
+      width: 90%; max-width: 560px; max-height: 80vh;
+      overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    }
+    .modal-header {
+      padding: 18px 24px; border-bottom: 1px solid #eee;
+      font-size: 17px; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-header .close {
+      background: none; border: none; font-size: 24px;
+      cursor: pointer; color: #999; line-height: 1;
+    }
+    .modal-header .close:hover { color: #333; }
+    .modal-body { padding: 24px; }
+    .modal-footer {
+      padding: 14px 24px; border-top: 1px solid #eee;
+      display: flex; justify-content: flex-end; gap: 12px;
+    }
+
+    /* ===== Alert ===== */
+    .alert {
+      padding: 12px 16px; border-radius: 8px; font-size: 14px;
+      margin-bottom: 16px; display: none;
+    }
+    .alert.show { display: block; }
+    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .alert-danger  { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .alert-info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+
+    /* ===== Response JSON ===== */
+    .response-box {
+      background: #1a1a2e; color: #a8d8ea; border-radius: 10px;
+      padding: 16px 20px; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px; line-height: 1.6; overflow-x: auto;
+      max-height: 240px; overflow-y: auto; white-space: pre-wrap;
+      margin-top: 12px; display: none;
+    }
+    .response-box.show { display: block; }
+
+    /* ===== Pagination ===== */
+    .pagination {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 0; font-size: 14px;
+    }
+    .pagination .page-btn {
+      padding: 4px 12px; border: 1px solid #ddd; border-radius: 6px;
+      background: #fff; cursor: pointer; font-size: 13px;
+    }
+    .pagination .page-btn:hover { border-color: #0f3460; }
+    .pagination .page-btn:disabled { opacity: .4; cursor: default; }
+    .pagination .page-info { color: #888; }
+
+    /* ===== Endpoints Table ===== */
+    .endpoint-table { width: 100%; font-size: 14px; }
+    .endpoint-table td {
+      padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+    }
+    .method-tag {
+      display: inline-block; padding: 2px 10px; border-radius: 4px;
+      font-size: 12px; font-weight: 700; color: #fff; min-width: 52px;
+      text-align: center;
+    }
+    .method-GET    { background: #2ecc71; }
+    .method-POST   { background: #3498db; }
+    .method-PUT    { background: #f39c12; }
+    .method-PATCH  { background: #9b59b6; }
+    .method-DELETE { background: #e74c3c; }
+
+    /* ===== Loading ===== */
+    .loading { text-align: center; padding: 40px; color: #aaa; }
+    .spinner {
+      display: inline-block; width: 32px; height: 32px;
+      border: 3px solid #eee; border-top-color: #0f3460;
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Filter ===== */
+    .filter-bar {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+      align-items: flex-end;
+    }
+    .filter-bar .form-group { margin-bottom: 0; min-width: 140px; }
+    .filter-bar .form-group label { font-size: 12px; }
+
+    /* ===== Footer ===== */
+    .footer {
+      text-align: center; padding: 20px; color: #aaa;
+      font-size: 13px; border-top: 1px solid #eee; margin-top: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .header { padding: 16px 20px; flex-direction: column; gap: 8px; text-align: center; }
+      .row { flex-direction: column; }
+      .filter-bar { flex-direction: column; }
+      .form-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <h1>
+    GY · 通用 CRUD API
+    <span class="watermark-badge">GY</span>
+    <small>v1.0</small>
+  </h1>
+  <span class="badge">MySQL · Express · Node.js</span>
+</header>
+
+<div class="container">
+
+  <!-- ===== Alert ===== -->
+  <div id="alert" class="alert"></div>
+
+  <div class="row">
+    <!-- ===== Left: Tables & Endpoints ===== -->
+    <div class="col" style="max-width:320px">
+      <!-- 表列表 -->
+      <div class="card">
+        <div class="card-header">
+          <span>📋 数据表</span>
+          <button class="btn btn-sm btn-outline" onclick="refreshTables()">刷新</button>
+        </div>
+        <div class="card-body">
+          <ul id="tableList" class="table-list">
+            <li class="loading"><div class="spinner"></div></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- API 端点 -->
+      <div class="card">
+        <div class="card-header">📖 API 文档</div>
+        <div class="card-body" style="padding:12px">
+          <table class="endpoint-table">
+            <tr><td><span class="method-tag method-GET">GET</span></td><td>/api/tables</td></tr>
+            <tr><td><span class="method-tag method-GET">GET</span></td><td>/api/:table</td></tr>
+            <tr><td><span class="method-tag method-GET">GET</span></td><td>/api/:table/:id</td></tr>
+            <tr><td><span class="method-tag method-POST">POST</span></td><td>/api/:table</td></tr>
+            <tr><td><span class="method-tag method-PUT">PUT</span></td><td>/api/:table/:id</td></tr>
+            <tr><td><span class="method-tag method-DELETE">DELETE</span></td><td>/api/:table/:id</td></tr>
+            <tr><td><span class="method-tag method-POST">POST</span></td><td>/api/ai/search</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- AI 搜索 -->
+      <div class="card">
+        <div class="card-header">
+          <span>🤖 AI 智能搜索</span>
+          <span class="watermark-badge">DeepSeek</span>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>用自然语言查询数据库</label>
+            <div style="display:flex;gap:8px">
+              <input id="aiQuery" class="form-control" placeholder="例：30岁以上的用户有哪些" style="flex:1" onkeydown="if(event.key==='Enter')aiSearch()">
+              <button class="btn btn-primary" onclick="aiSearch()">🔍 搜索</button>
+            </div>
+          </div>
+          <div id="aiResult" style="display:none;margin-top:8px;font-size:14px"></div>
+          <div id="aiSql" style="display:none;margin-top:6px;padding:6px 10px;background:#f5f5f5;border-radius:6px;font-family:monospace;font-size:12px;color:#666;overflow-x:auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Right: Data Browser ===== -->
+    <div class="col" style="flex:3">
+      <!-- 工具栏 -->
+      <div class="card">
+        <div class="card-header">
+          <span id="tableTitle">📄 请选择一张表</span>
+          <div style="display:flex;gap:8px">
+            <button id="btnCreate" class="btn btn-primary btn-sm" onclick="openCreateModal()" disabled>➕ 新增</button>
+            <button id="btnRefresh" class="btn btn-outline btn-sm" onclick="loadTableData()" disabled>🔄 刷新</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- 筛选栏 -->
+          <div id="filterBar" class="filter-bar" style="display:none"></div>
+
+          <!-- 数据表 -->
+          <div id="dataArea" class="data-table-wrap">
+            <div class="loading" style="padding:60px"><div class="spinner"></div></div>
+          </div>
+
+          <!-- 分页 -->
+          <div id="pagination" class="pagination" style="display:none"></div>
+
+          <!-- 响应预览 -->
+          <div id="responseBox" class="response-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    GY · 通用 CRUD API &mdash; 每条响应均携带 <strong>watermark: "GY"</strong>
+  </div>
+</div>
+
+<!-- ===== Create/Edit Modal ===== -->
+<div id="modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modalTitle">新增记录</span>
+      <button class="close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="modalForm"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button id="modalSubmit" class="btn btn-primary" onclick="submitModal()">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== State ====================
+const API = window.location.origin;
+let currentTable = null;
+let currentSchema = null;
+let currentPage = 1;
+let pageSize = 10;
+let editId = null;
+let allData = [];
+
+// ==================== Utils ====================
+function $(id) { return document.getElementById(id); }
+
+function showAlert(msg, type = 'success') {
+  const el = $('alert');
+  el.textContent = msg;
+  el.className = 'alert alert-' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function showResponse(data) {
+  const el = $('responseBox');
+  el.textContent = JSON.stringify(data, null, 2);
+  el.classList.add('show');
+}
+
+function escHtml(s) {
+  if (s === null || s === undefined) return '<span style="color:#bbb">NULL</span>';
+  const v = String(s);
+  return v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ==================== Tables ====================
+async function refreshTables() {
+  const list = $('tableList');
+  list.innerHTML = '<li class="loading"><div class="spinner"></div></li>';
+  try {
+    const res = await fetch(API + '/api/tables');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    renderTableList(json.data);
+  } catch (e) {
+    list.innerHTML = '<li style="color:#e94560">加载失败: ' + escHtml(e.message) + '</li>';
+  }
+}
+
+function renderTableList(tables) {
+  const list = $('tableList');
+  if (tables.length === 0) {
+    list.innerHTML = '<li style="color:#aaa">暂无数据表</li>';
+    return;
+  }
+  list.innerHTML = tables.map(t => `
+    <li class="${currentTable === t.name ? 'active' : ''}" onclick="selectTable('${t.name}')">
+      <span class="table-name">${escHtml(t.name)}</span>
+      <span class="table-meta">${t.columns.length}列 · ${t.rows}行</span>
+    </li>
+  `).join('');
+}
+
+async function selectTable(name) {
+  currentTable = name;
+  currentPage = 1;
+  editId = null;
+  document.querySelectorAll('.table-list li').forEach(el => el.classList.remove('active'));
+  // highlight
+  const items = $('tableList').querySelectorAll('li');
+  items.forEach(el => {
+    if (el.textContent.trim().startsWith(name)) el.classList.add('active');
+  });
+
+  $('tableTitle').textContent = '📄 ' + name;
+  $('btnCreate').disabled = false;
+  $('btnRefresh').disabled = false;
+  await loadSchema();
+  await loadTableData();
+}
+
+// ==================== Schema ====================
+async function loadSchema() {
+  if (!currentTable) return;
+  try {
+    const res = await fetch(API + '/api/tables/' + currentTable + '/schema');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    currentSchema = json.data;
+    renderFilterBar();
+  } catch (e) {
+    showAlert('获取表结构失败: ' + e.message, 'danger');
+  }
+}
+
+function renderFilterBar() {
+  const bar = $('filterBar');
+  if (!currentSchema) return;
+  // 只对字符串列和数字列生成筛选框
+  const filterCols = currentSchema.columns.filter(c =>
+    !c.isPrimary && !c.autoIncrement && c.name !== 'created_at' && c.name !== 'updated_at'
+  );
+  if (filterCols.length === 0) { bar.style.display = 'none'; return; }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = filterCols.map(c => `
+    <div class="form-group">
+      <label>${escHtml(c.name)}</label>
+      <input class="form-control filter-input" data-col="${c.name}" placeholder="${c.type}" style="width:140px">
+    </div>
+  `).join('') + `
+    <div class="form-group" style="align-self:flex-end">
+      <button class="btn btn-primary btn-sm" onclick="applyFilter()">🔍 筛选</button>
+      <button class="btn btn-outline btn-sm" onclick="clearFilter()">清除</button>
+    </div>
+  `;
+  // Enter 键触发筛选
+  bar.querySelectorAll('.filter-input').forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') applyFilter(); });
+  });
+}
+
+function getFilterParams() {
+  const inputs = document.querySelectorAll('.filter-input');
+  const params = new URLSearchParams();
+  inputs.forEach(inp => {
+    if (inp.value.trim()) {
+      params.set(inp.dataset.col, inp.value.trim());
+    }
+  });
+  return params;
+}
+
+function applyFilter() { currentPage = 1; loadTableData(); }
+function clearFilter() {
+  document.querySelectorAll('.filter-input').forEach(inp => inp.value = '');
+  currentPage = 1;
+  loadTableData();
+}
+
+// ==================== Data ====================
+async function loadTableData() {
+  if (!currentTable) return;
+  const area = $('dataArea');
+  area.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  $('pagination').style.display = 'none';
+
+  try {
+    const params = getFilterParams();
+    params.set('_page', currentPage);
+    params.set('_size', pageSize);
+    const qs = params.toString();
+    const res = await fetch(API + '/api/' + currentTable + (qs ? '?' + qs : ''));
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+
+    allData = json.data || [];
+    renderDataTable(json);
+    renderPagination(json);
+    showResponse(json);
+  } catch (e) {
+    area.innerHTML = '<div style="color:#e94560;padding:20px">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderDataTable(json) {
+  const area = $('dataArea');
+  const data = json.data || [];
+  if (data.length === 0) {
+    area.innerHTML = '<div style="padding:40px;text-align:center;color:#aaa">暂无数据</div>';
+    return;
+  }
+  const cols = Object.keys(data[0]);
+  const pk = currentSchema ? currentSchema.primaryKey : 'id';
+
+  let html = '<table class="data-table"><thead><tr>';
+  cols.forEach(c => {
+    html += `<th>${escHtml(c)}${c === pk ? ' 🔑' : ''}</th>`;
+  });
+  html += '<th style="width:120px">操作</th></tr></thead><tbody>';
+
+  data.forEach(row => {
+    html += '<tr>';
+    cols.forEach(c => {
+      const val = row[c];
+      const isPK = c === pk;
+      html += isPK
+        ? `<td class="pk-cell">${escHtml(val)}</td>`
+        : `<td>${escHtml(val)}</td>`;
+    });
+    const id = row[pk];
+    html += `<td>
+      <button class="btn btn-sm btn-primary" onclick="openEditModal(${JSON.stringify(row).replace(/"/g,'&quot;')})">编辑</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteRow(${id})">删除</button>
+    </td></tr>`;
+  });
+
+  html += '</tbody></table>';
+  area.innerHTML = html;
+}
+
+function renderPagination(json) {
+  const el = $('pagination');
+  if (json.totalPages <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = `
+    <button class="page-btn" onclick="goPage(${json.page - 1})" ${json.page <= 1 ? 'disabled' : ''}>‹</button>
+    <span class="page-info">第 ${json.page} / ${json.totalPages} 页（共 ${json.total} 条）</span>
+    <button class="page-btn" onclick="goPage(${json.page + 1})" ${json.page >= json.totalPages ? 'disabled' : ''}>›</button>
+    <span style="font-size:13px;color:#aaa;margin-left:8px">
+      <select onchange="pageSize=Number(this.value);currentPage=1;loadTableData()" style="padding:2px 6px;border:1px solid #ddd;border-radius:4px">
+        <option value="5" ${pageSize===5?'selected':''}>5条/页</option>
+        <option value="10" ${pageSize===10?'selected':''}>10条/页</option>
+        <option value="20" ${pageSize===20?'selected':''}>20条/页</option>
+        <option value="50" ${pageSize===50?'selected':''}>50条/页</option>
+      </select>
+    </span>
+  `;
+}
+
+function goPage(p) {
+  if (p < 1) return;
+  currentPage = p;
+  loadTableData();
+}
+
+// ==================== CRUD ====================
+function openCreateModal() {
+  if (!currentSchema) return;
+  editId = null;
+  $('modalTitle').textContent = '➕ 新增 - ' + currentTable;
+  renderFormFields({});
+  $('modal').classList.add('show');
+}
+
+function openEditModal(row) {
+  editId = row[currentSchema.primaryKey];
+  $('modalTitle').textContent = '✏️ 编辑 - ' + currentTable + ' (ID=' + editId + ')';
+  renderFormFields(row);
+  $('modal').classList.add('show');
+}
+
+function closeModal() {
+  $('modal').classList.remove('show');
+}
+
+function renderFormFields(row) {
+  const form = $('modalForm');
+  if (!currentSchema) return;
+  const cols = currentSchema.columns.filter(c =>
+    !c.autoIncrement && c.name !== 'created_at' && c.name !== 'updated_at'
+  );
+  form.innerHTML = cols.map(c => {
+    const val = row[c.name] !== undefined ? row[c.name] : '';
+    return `
+      <div class="form-group">
+        <label>${escHtml(c.name)} ${c.nullable ? '<span style="color:#999">(可选)</span>' : '<span style="color:#e94560">*</span>'}</label>
+        ${c.type === 'text' || (c.type && c.type.includes('text'))
+          ? `<textarea class="form-control" data-col="${c.name}" style="min-height:80px">${escHtml(val)}</textarea>`
+          : `<input class="form-control" data-col="${c.name}" value="${escHtml(val)}">`
+        }
+      </div>
+    `;
+  }).join('');
+}
+
+async function submitModal() {
+  if (!currentTable || !currentSchema) return;
+  const inputs = $('modalForm').querySelectorAll('.form-control');
+  const body = {};
+  inputs.forEach(inp => {
+    const col = inp.dataset.col;
+    const val = inp.value.trim();
+    if (val !== '') body[col] = val;
+  });
+
+  const url = editId
+    ? API + '/api/' + currentTable + '/' + editId
+    : API + '/api/' + currentTable;
+  const method = editId ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || JSON.stringify(json));
+
+    showAlert(editId ? '✅ 更新成功' : '✅ 创建成功');
+    closeModal();
+    await loadTableData();
+    showResponse(json);
+  } catch (e) {
+    showAlert('操作失败: ' + e.message, 'danger');
+  }
+}
+
+async function deleteRow(id) {
+  if (!currentTable || !currentSchema) return;
+  const pk = currentSchema.primaryKey || 'id';
+  if (!confirm(`确定删除 ${pk}=${id} 这条记录吗？`)) return;
+
+  try {
+    const res = await fetch(API + '/api/' + currentTable + '/' + id, { method: 'DELETE' });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+
+    showAlert('✅ 删除成功');
+    await loadTableData();
+    showResponse(json);
+  } catch (e) {
+    showAlert('删除失败: ' + e.message, 'danger');
+  }
+}
+
+// ==================== AI 搜索 ====================
+async function aiSearch() {
+  const query = $('aiQuery').value.trim();
+  if (!query) { showAlert('请输入查询内容', 'danger'); return; }
+
+  const resultDiv = $('aiResult');
+  const sqlDiv = $('aiSql');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<div class="loading" style="padding:10px"><div class="spinner"></div></div>';
+  sqlDiv.style.display = 'none';
+
+  try {
+    const res = await fetch(API + '/api/ai/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const json = await res.json();
+
+    if (!json.success) throw new Error(json.message || '查询失败');
+
+    sqlDiv.textContent = '📝 ' + (json.sql || '无需 SQL');
+    sqlDiv.style.display = 'block';
+
+    if (json.answer) {
+      resultDiv.innerHTML = '<div style="padding:8px 12px;background:#e8f4fd;border-radius:8px;border-left:3px solid #0f3460">🤖 ' + escHtml(json.answer) + '</div>';
+    } else {
+      resultDiv.innerHTML = '';
+    }
+
+    // 如果有数据，在表格区展示
+    if (json.data && json.data.length > 0) {
+      const cols = Object.keys(json.data[0]);
+      let html = '<div style="margin-top:8px;font-size:13px;color:#888">共 ' + json.count + ' 条结果</div>';
+      html += '<table class="data-table" style="margin-top:6px;font-size:13px"><thead><tr>';
+      cols.forEach(c => { html += '<th>' + escHtml(c) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      json.data.slice(0, 20).forEach(row => {
+        html += '<tr>';
+        cols.forEach(c => { html += '<td>' + escHtml(row[c]) + '</td>'; });
+        html += '</tr>';
+      });
+      if (json.count > 20) html += '<tr><td colspan="' + cols.length + '" style="color:#999;text-align:center">...仅显示前20条</td></tr>';
+      html += '</tbody></table>';
+      resultDiv.innerHTML += html;
+    } else if (!json.answer) {
+      resultDiv.innerHTML = '<div style="padding:8px 12px;color:#888">未查询到数据</div>';
+    }
+
+    // 同时在响应预览区显示完整 JSON
+    showResponse(json);
+  } catch (e) {
+    resultDiv.innerHTML = '<div style="padding:8px 12px;background:#f8d7da;border-radius:8px;color:#721c24">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// ==================== Init ====================
+refreshTables();
+
+// Enter 键关闭 modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>
