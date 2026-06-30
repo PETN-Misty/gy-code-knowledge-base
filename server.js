@@ -230,7 +230,7 @@ app.post('/api/ai/search', async (req, res) => {
     const schemaContext = await getSchemaContext();
 
     // 2. 构建 AI 提示词
-    const systemPrompt = `你是一个 MySQL 数据库查询助手。数据库包含以下表：
+    const systemPrompt = `你是一个代码知识库查询助手。数据库包含以下表：
 
 ${schemaContext}
 
@@ -239,8 +239,8 @@ ${schemaContext}
 - 只生成 SELECT 查询，不要修改数据
 - 列名用反引号包裹，表名用反引号包裹
 - 字符串用单引号
-- 如果问题指定了表名，只查那张表
-- 如果问题模棱两可，选最合理的表
+- 用户会问代码相关的问题（如"找排序算法的例子"、"Python的异步编程示例"）
+- 用 language、tags、difficulty 列做筛选
 - SQL 末尾加分号
 - 如果问题无法用 SQL 表达，给出解释
 
@@ -914,7 +914,7 @@ app.delete('/api/:table/:id', async (req, res) => {
   }
 });
 
-// ==================== 建表示例 & 启动 ====================
+// ==================== 建表 & 启动 ====================
 
 async function initDatabase() {
   // 确保数据库存在
@@ -931,54 +931,329 @@ async function initDatabase() {
 
   pool = mysql.createPool(DB_CONFIG);
 
-  // ----- 创建示例表 -----
-
-  // users 表
+  // ----- 代码片段表 code_snippets -----
   await pool.execute(`
-    CREATE TABLE IF NOT EXISTS users (
-      id         INT             NOT NULL AUTO_INCREMENT,
-      name       VARCHAR(100)    NOT NULL,
-      email      VARCHAR(200)    NOT NULL UNIQUE,
-      age        INT             NULL,
-      created_at DATETIME        DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id)
+    CREATE TABLE IF NOT EXISTS code_snippets (
+      id          INT             NOT NULL AUTO_INCREMENT,
+      title       VARCHAR(200)    NOT NULL COMMENT '代码标题',
+      language    VARCHAR(50)     NOT NULL COMMENT '编程语言',
+      code        TEXT            NOT NULL COMMENT '代码内容',
+      description TEXT            NULL     COMMENT '说明',
+      tags        VARCHAR(500)    NULL     COMMENT '标签（逗号分隔）',
+      difficulty  VARCHAR(20)     DEFAULT 'beginner' COMMENT 'beginner / intermediate / advanced',
+      source      VARCHAR(200)    DEFAULT '' COMMENT '来源',
+      created_at  DATETIME        DEFAULT CURRENT_TIMESTAMP,
+      updated_at  DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      FULLTEXT INDEX ft_code (code, description, title)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  const [userCount] = await pool.execute('SELECT COUNT(*) AS count FROM users');
-  if (userCount[0].count === 0) {
+  const [snippetCount] = await pool.execute('SELECT COUNT(*) AS count FROM code_snippets');
+  if (snippetCount[0].count === 0) {
     await pool.execute(
-      'INSERT INTO users (name, email, age) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)',
-      ['张三', 'zhangsan@example.com', 28,
-       '李四', 'lisi@example.com', 35,
-       '王五', 'wangwu@example.com', 22,
-       '赵六', 'zhaoliu@example.com', 30]
-    );
-    console.log('✅ 已插入 users 示例数据');
+      `INSERT INTO code_snippets (title, language, code, description, tags, difficulty, source) VALUES
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?),
+      (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        '冒泡排序', 'Python',
+        `def bubble_sort(arr):
+    """冒泡排序算法"""
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+    return arr
+
+# 使用示例
+data = [64, 34, 25, 12, 22, 11, 90]
+print(bubble_sort(data))`,
+        '经典的冒泡排序算法实现', '排序,算法,基础', 'beginner', '示例',
+
+        'Promise 链式调用', 'JavaScript',
+        `// Promise 链式调用示例
+function fetchUser(id) {
+  return fetch(\`https://api.example.com/users/\${id}\`)
+    .then(res => res.json());
+}
+
+function fetchPosts(userId) {
+  return fetch(\`https://api.example.com/users/\${userId}/posts\`)
+    .then(res => res.json());
+}
+
+// 链式调用
+fetchUser(1)
+  .then(user => {
+    console.log('用户:', user.name);
+    return fetchPosts(user.id);
+  })
+  .then(posts => {
+    console.log('文章:', posts.length);
+  })
+  .catch(err => console.error('错误:', err));`,
+        '使用 Promise 进行链式异步调用', '异步,Promise,API', 'intermediate', '示例',
+
+        'goroutine 并发', 'Go',
+        `package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(id int, jobs <-chan int, results chan<- int) {
+    for job := range jobs {
+        fmt.Printf("Worker %d 开始任务 %d\\n", id, job)
+        time.Sleep(time.Second)
+        results <- job * 2
+    }
+}
+
+func main() {
+    jobs := make(chan int, 5)
+    results := make(chan int, 5)
+
+    // 启动 3 个 worker
+    for w := 1; w <= 3; w++ {
+        go worker(w, jobs, results)
+    }
+
+    // 发送 5 个任务
+    for j := 1; j <= 5; j++ {
+        jobs <- j
+    }
+    close(jobs)
+
+    // 收集结果
+    for r := 1; r <= 5; r++ {
+        <-results
+    }
+}`,
+        'Go 并发编程：使用 goroutine 和 channel', '并发,goroutine,channel', 'advanced', '示例',
+
+        '二分查找', 'TypeScript',
+        `function binarySearch<T extends number>(arr: T[], target: T): number {
+  let left = 0;
+  let right = arr.length - 1;
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+
+    if (arr[mid] === target) {
+      return mid; // 找到目标
+    } else if (arr[mid] < target) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
   }
 
-  // categories 表
+  return -1; // 未找到
+}
+
+// 测试
+const sortedArr = [1, 3, 5, 7, 9, 11, 13];
+const index = binarySearch(sortedArr, 7);
+console.log(\`目标索引: \${index}\`);`,
+        'TypeScript 实现的二分查找算法', '算法,查找,二分', 'intermediate', '示例',
+
+        'HashMap 遍历', 'Java',
+        `import java.util.*;
+
+public class HashMapExample {
+    public static void main(String[] args) {
+        Map<String, Integer> scores = new HashMap<>();
+        scores.put("Alice", 95);
+        scores.put("Bob", 87);
+        scores.put("Charlie", 92);
+
+        // 方式 1: for-each + entrySet
+        System.out.println("=== entrySet 遍历 ===");
+        for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+            System.out.println(entry.getKey() + ": " + entry.getValue());
+        }
+
+        // 方式 2: forEach (Java 8+)
+        System.out.println("=== forEach 遍历 ===");
+        scores.forEach((name, score) ->
+            System.out.println(name + ": " + score)
+        );
+
+        // 方式 3: keySet 遍历
+        System.out.println("=== keySet 遍历 ===");
+        for (String name : scores.keySet()) {
+            System.out.println(name + ": " + scores.get(name));
+        }
+    }
+}`,
+        'Java HashMap 的三种遍历方式', '集合,Map,遍历', 'beginner', '示例',
+
+        '闭包示例', 'JavaScript',
+        `// 闭包：函数保留对其外部作用域的引用
+function createCounter() {
+  let count = 0;
+
+  return {
+    increment() {
+      count++;
+      return count;
+    },
+    decrement() {
+      count--;
+      return count;
+    },
+    getCount() {
+      return count;
+    }
+  };
+}
+
+const counter = createCounter();
+console.log(counter.increment()); // 1
+console.log(counter.increment()); // 2
+console.log(counter.decrement()); // 1
+console.log(counter.getCount());  // 1
+
+// 实用场景：函数工厂
+function multiply(factor) {
+  return function(number) {
+    return number * factor;
+  };
+}
+
+const double = multiply(2);
+const triple = multiply(3);
+console.log(double(5)); // 10
+console.log(triple(5)); // 15`,
+        'JavaScript 闭包的概念与实用场景', '闭包,函数式,作用域', 'intermediate', '示例',
+
+        'trait 接口', 'Rust',
+        `// 定义 trait
+trait Animal {
+    fn name(&self) -> &str;
+    fn speak(&self) -> String;
+
+    // 默认实现
+    fn description(&self) -> String {
+        format!("{} says {}", self.name(), self.speak())
+    }
+}
+
+// 实现 trait
+struct Dog {
+    name: String,
+}
+
+impl Animal for Dog {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn speak(&self) -> String {
+        "Woof!".to_string()
+    }
+}
+
+struct Cat {
+    name: String,
+}
+
+impl Animal for Cat {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn speak(&self) -> String {
+        "Meow!".to_string()
+    }
+}
+
+fn main() {
+    let dog = Dog { name: "Buddy".to_string() };
+    let cat = Cat { name: "Kitty".to_string() };
+
+    println!("{}", dog.description());
+    println!("{}", cat.description());
+}`,
+        'Rust trait 接口的定义与实现', 'trait,泛型,接口', 'advanced', '示例',
+
+        'Stream API (LINQ)', 'C#',
+        `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program {
+    static void Main() {
+        var students = new List<Student> {
+            new Student { Name = "Alice", Score = 85, Age = 20 },
+            new Student { Name = "Bob",   Score = 92, Age = 22 },
+            new Student { Name = "Carol", Score = 78, Age = 19 },
+            new Student { Name = "David", Score = 95, Age = 21 },
+        };
+
+        // LINQ 查询：筛选 + 排序 + 投影
+        var result = students
+            .Where(s => s.Score >= 80)
+            .OrderByDescending(s => s.Score)
+            .Select(s => $"{s.Name}: {s.Score}分 (年龄{s.Age})");
+
+        Console.WriteLine("优秀学生：");
+        foreach (var item in result) {
+            Console.WriteLine("  " + item);
+        }
+
+        // 聚合操作
+        Console.WriteLine($"\\n平均分: {students.Average(s => s.Score):F1}");
+        Console.WriteLine($"最高分: {students.Max(s => s.Score)}");
+    }
+}
+
+class Student {
+    public string Name { get; set; }
+    public int Score { get; set; }
+    public int Age { get; set; }
+}`,
+        'C# LINQ (Stream API) 数据查询与处理', 'LINQ,集合,查询', 'intermediate', '示例',
+      ]
+    );
+    console.log('✅ 已插入 code_snippets 示例数据（8 个代码片段）');
+  }
+
+  // ----- 编程语言表 languages -----
   await pool.execute(`
-    CREATE TABLE IF NOT EXISTS categories (
+    CREATE TABLE IF NOT EXISTS languages (
       id          INT          NOT NULL AUTO_INCREMENT,
-      name        VARCHAR(100) NOT NULL,
-      description TEXT         NULL,
-      sort_order  INT          DEFAULT 0,
-      created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+      name        VARCHAR(50)  NOT NULL UNIQUE COMMENT '语言名称',
+      extension   VARCHAR(20)  NULL     COMMENT '文件扩展名',
+      sort_order  INT          DEFAULT 0 COMMENT '排序',
       PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  const [catCount] = await pool.execute('SELECT COUNT(*) AS count FROM categories');
-  if (catCount[0].count === 0) {
+  const [langCount] = await pool.execute('SELECT COUNT(*) AS count FROM languages');
+  if (langCount[0].count === 0) {
     await pool.execute(
-      'INSERT INTO categories (name, description, sort_order) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)',
-      ['电子产品', '手机、电脑、平板等数码产品', 1,
-       '服装鞋帽', '服饰、鞋类及配饰', 2,
-       '图书音像', '书籍、音乐、影视', 3]
+      `INSERT INTO languages (name, extension, sort_order) VALUES
+       ('JavaScript', '.js', 1),
+       ('TypeScript', '.ts', 2),
+       ('Python', '.py', 3),
+       ('Java', '.java', 4),
+       ('Go', '.go', 5),
+       ('Rust', '.rs', 6),
+       ('C++', '.cpp', 7),
+       ('C#', '.cs', 8),
+       ('PHP', '.php', 9),
+       ('Ruby', '.rb', 10),
+       ('Swift', '.swift', 11),
+       ('Kotlin', '.kt', 12)`
     );
-    console.log('✅ 已插入 categories 示例数据');
+    console.log('✅ 已插入 languages 示例数据（12 种语言）');
   }
 
   // ----- RAG 知识库表 -----
@@ -1000,15 +1275,15 @@ async function initDatabase() {
   if (kbCount[0].count === 0) {
     await pool.execute(
       'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
-      ['GY API 简介', 'GY·通用CRUD API是一个基于Express和MySQL的数据库管理工具，支持任意表的增删改查操作，内置AI智能搜索功能。', 0, '使用说明']
+      ['GY 代码知识库简介', 'GY·代码知识库是一个基于Express和MySQL的编程学习工具，支持存储和管理各种编程语言的代码片段，内置AI智能搜索和RAG知识库问答功能，方便开发者学习和查阅代码。', 0, '说明']
     );
     await pool.execute(
       'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
-      ['GY API 技术栈', '本项目使用Node.js + Express 5作为Web框架，MySQL 8.0作为数据库，mysql2作为数据库驱动。AI功能接入DeepSeek V4 Flash API。', 0, '使用说明']
+      ['GY 代码知识库技术栈', '本项目使用Node.js + Express 5作为Web框架，MySQL 8.0作为数据库，mysql2作为数据库驱动。AI功能接入DeepSeek V4 Flash API，支持自然语言搜索代码和基于知识库的智能问答。', 0, '说明']
     );
     await pool.execute(
       'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
-      ['GY API 启动方式', '打开终端进入项目目录，执行 npm start 启动服务，然后在浏览器访问 http://localhost:3000 即可使用。按 Ctrl+C 停止服务器。', 0, '使用说明']
+      ['代码知识库使用方式', '可以通过网页界面浏览和搜索代码片段：左侧按语言筛选，顶部按难度筛选，点击代码卡片查看完整代码（语法高亮）。AI搜索支持自然语言查找代码。RAG知识库可上传编程文档进行智能问答。', 0, '说明']
     );
     console.log('✅ 已插入知识库示例数据');
   }
@@ -1030,40 +1305,39 @@ initDatabase()
     app.listen(PORT, () => {
       console.log(`
 ====================================================
-  🚀  GY·通用 CRUD API (MySQL) 已启动
+  🚀  GY·代码知识库 (Code Learning Hub) 已启动
   地址: http://localhost:${PORT}
-  ── 元数据 ──────────────────────────────
-  GET  /api/tables              - 查看所有表
-  GET  /api/tables/:table/schema - 查看表结构
-  POST /api/tables             - 创建新表
+  ── 代码片段管理 ──────────────────────
+  GET    /api/code_snippets          - 查询代码（支持筛选/排序/分页）
+  GET    /api/code_snippets/:id      - 获取单条代码
+  POST   /api/code_snippets          - 新增代码片段
+  PUT    /api/code_snippets/:id      - 更新代码
+  DELETE /api/code_snippets/:id      - 删除代码
 
-  ── 通用行数据操作 ──────────────────────
-  GET    /api/:table           - 查询行（支持筛选/排序/分页）
-  GET    /api/:table/:id       - 获取单行（按主键）
-  POST   /api/:table           - 插入行
-  PUT    /api/:table/:id       - 更新行（按主键）
-  PATCH  /api/:table/:id       - 部分更新行（按主键）
-  DELETE /api/:table/:id       - 删除行（按主键）
+  ── 辅助数据 ──────────────────────────────
+  GET    /api/languages              - 编程语言列表
 
-  ── 🤖 AI 智能搜索 ─────────────────────
-  POST  /api/ai/search         - 自然语言查数据库
+  ── 🤖 AI 代码搜索 ─────────────────────
+  POST  /api/ai/search              - 自然语言搜代码
 
   ── 📚 RAG 知识库问答 ─────────────────
-  POST  /api/rag/documents     - 上传文档到知识库
-  GET   /api/rag/documents     - 查看知识库文档列表
-  POST  /api/rag/ask           - 基于知识库问答
+  POST  /api/rag/documents          - 上传文档到知识库
+  GET   /api/rag/documents          - 查看知识库文档列表
+  POST  /api/rag/ask                - 基于知识库问答
 
-  ── 示例 ───────────────────────────────
-  curl http://localhost:${PORT}/api/users
-  curl http://localhost:${PORT}/api/categories
-  curl "http://localhost:${PORT}/api/users?name=张三&minAge=20"
+  ── 示例查询 ─────────────────────────────
+  curl http://localhost:${PORT}/api/code_snippets
+  curl "http://localhost:${PORT}/api/code_snippets?language=Python&difficulty=beginner"
+  curl -X POST http://localhost:${PORT}/api/ai/search \\
+    -H "Content-Type: application/json" \\
+    -d '{"query":"找排序算法的代码"}'
 
   ── 查询参数 ───────────────────────────
-  ?col=val         - 列筛选（数字 =，字符串 LIKE）
-  ?minCol=N&maxCol=N - 范围查询
-  &_sort=col       - 排序列（默认主键）
-  &_order=DESC     - 排序方向
-  &_page=1&_size=50 - 分页
+  ?col=val              - 列筛选（数字 =，字符串 LIKE）
+  ?minCol=N&maxCol=N    - 范围查询
+  &_sort=col            - 排序列（默认主键）
+  &_order=DESC          - 排序方向
+  &_page=1&_size=20     - 分页
 ====================================================
       `);
     });
