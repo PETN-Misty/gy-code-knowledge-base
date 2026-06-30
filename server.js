@@ -340,6 +340,254 @@ SQL：${parsed.sql}
   }
 });
 
+// ==================== RAG 知识库 (DeepSeek V4 Flash) ====================
+
+/**
+ * 文本分块：按段落和句子切分，每块约 500 字，块间重叠 50 字
+ */
+function chunkText(text, maxLen = 500, overlap = 50) {
+  // 先按段落拆分
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+  const chunks = [];
+  let buffer = '';
+
+  for (const para of paragraphs) {
+    if ((buffer + para).length <= maxLen) {
+      buffer += (buffer ? '\n\n' : '') + para;
+    } else {
+      if (buffer) chunks.push(buffer.trim());
+      // 长段落按句子切分
+      if (para.length > maxLen) {
+        const sentences = para.split(/(?<=[。！？.!?])/);
+        buffer = '';
+        for (const sent of sentences) {
+          if ((buffer + sent).length > maxLen) {
+            if (buffer) chunks.push(buffer.trim());
+            buffer = sent;
+          } else {
+            buffer += sent;
+          }
+        }
+      } else {
+        buffer = para;
+      }
+    }
+  }
+  if (buffer) chunks.push(buffer.trim());
+
+  // 去重
+  return [...new Set(chunks)];
+}
+
+/**
+ * POST /api/rag/documents
+ * 上传文档到知识库
+ * 请求: { title: string, content: string, source?: string }
+ */
+app.post('/api/rag/documents', async (req, res) => {
+  try {
+    const { title, content, source } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ success: false, message: '请提供 title 和 content' });
+    }
+
+    const chunks = chunkText(content);
+
+    let inserted = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      await pool.execute(
+        'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
+        [title.trim(), chunks[i], i, source || '']
+      );
+      inserted++;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `文档「${title}」已导入，共 ${inserted} 个知识块`,
+      chunks: inserted,
+      watermark: 'GY',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '导入失败', error: err.message, watermark: 'GY' });
+  }
+});
+
+/**
+ * GET /api/rag/documents
+ * 列出知识库中的所有文档（按标题去重）
+ */
+app.get('/api/rag/documents', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT title, source, COUNT(*) AS chunks, MAX(created_at) AS updated_at
+      FROM knowledge_chunks
+      GROUP BY title, source
+      ORDER BY updated_at DESC
+    `);
+
+    const [total] = await pool.execute('SELECT COUNT(*) AS total FROM knowledge_chunks');
+
+    res.json({
+      success: true,
+      count: rows.length,
+      totalChunks: total[0].total,
+      data: rows,
+      watermark: 'GY',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '查询失败', error: err.message, watermark: 'GY' });
+  }
+});
+
+/**
+ * DELETE /api/rag/documents/:title
+ * 删除指定文档
+ */
+app.delete('/api/rag/documents/:title', async (req, res) => {
+  try {
+    const { title } = req.params;
+    const [result] = await pool.execute('DELETE FROM knowledge_chunks WHERE title = ?', [title]);
+
+    res.json({
+      success: true,
+      message: `已删除文档「${title}」(${result.affectedRows} 个知识块)`,
+      affectedRows: result.affectedRows,
+      watermark: 'GY',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '删除失败', error: err.message, watermark: 'GY' });
+  }
+});
+
+/**
+ * POST /api/rag/ask
+ * RAG 问答：检索知识库 → DeepSeek 生成回答
+ * 请求: { query: string, topK?: number }
+ */
+app.post('/api/rag/ask', async (req, res) => {
+  try {
+    const { query, topK = 5 } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ success: false, message: '请输入问题' });
+    }
+
+    // 1. 全文检索：用 MySQL FULLTEXT 搜索最相关的知识块
+    const cleanQuery = query.replace(/[^一-龥a-zA-Z0-9\s]/g, ' ');
+    let chunks = [];
+
+    if (cleanQuery.trim()) {
+      const limit = Math.min(topK * 2, 20);
+      const sql =
+        `SELECT id, title, chunk_text, source, chunk_index,
+                MATCH(chunk_text) AGAINST(?) AS relevance
+         FROM knowledge_chunks
+         WHERE MATCH(chunk_text) AGAINST(?)
+         ORDER BY relevance DESC
+         LIMIT ${limit}`;
+      const [rows] = await pool.query(sql, [cleanQuery, cleanQuery]);
+      chunks = rows;
+    }
+
+    // 如果全文检索没结果，用 LIKE 模糊匹配兜底
+    if (chunks.length === 0) {
+      const fallbackLimit = Math.min(topK * 2, 20);
+      const [rows] = await pool.execute(
+        `SELECT id, title, chunk_text, source, chunk_index, 0 AS relevance
+         FROM knowledge_chunks
+         WHERE chunk_text LIKE ? OR chunk_text LIKE ? OR chunk_text LIKE ?
+         LIMIT ${fallbackLimit}`,
+        [`%${query}%`, `%${query.slice(0, 10)}%`, `%${query.slice(0, 5)}%`]
+      );
+      chunks = rows;
+    }
+
+    // 2. 如果知识库为空，引导用户上传文档
+    const [totalChunks] = await pool.execute('SELECT COUNT(*) AS c FROM knowledge_chunks');
+    if (totalChunks[0].c === 0) {
+      return res.json({
+        success: true,
+        answer: '📚 知识库还没有内容。请先上传文档（POST /api/rag/documents），我才能回答你的问题。',
+        sourceDocs: [],
+        watermark: 'GY',
+      });
+    }
+
+    // 3. 用 DeepSeek 对 chunks 做相关性重排序（取 topK）
+    let contextChunks = chunks.slice(0, Math.min(topK, chunks.length));
+
+    if (chunks.length > topK) {
+      // 让 AI 选出最相关的 chunks
+      const rerankPrompt = `从以下知识块中选出与问题最相关的 ${topK} 条（只返回序号，逗号分隔）：
+
+问题：${query}
+
+${chunks.map((c, i) => `[${i}] ${c.chunk_text.slice(0, 200)}`).join('\n\n')}`;
+
+      try {
+        const rerankResult = await callDeepSeek([
+          { role: 'system', content: '你是一个检索排序助手。根据问题相关性，选出最相关的知识块序号，只返回数字（逗号分隔）。' },
+          { role: 'user', content: rerankPrompt },
+        ], { temperature: 0.05, max_tokens: 100 });
+
+        const indices = rerankResult.match(/\d+/g)?.map(Number).filter(i => i < chunks.length).slice(0, topK);
+        if (indices && indices.length > 0) {
+          contextChunks = indices.map(i => chunks[i]);
+        }
+      } catch {
+        // 重排序失败，直接用前 topK 条
+      }
+    }
+
+    // 4. 拼 context → 调 DeepSeek 生成回答
+    const context = contextChunks.map(c =>
+      `【来源：${c.source || c.title}】${c.chunk_text}`
+    ).join('\n\n');
+
+    const answerPrompt = `你是一个知识库问答助手。请基于以下参考资料回答问题。
+
+参考资料：
+${context}
+
+问题：${query}
+
+要求：
+- 如果参考资料足够，给出详细准确的回答
+- 如果参考资料不足以回答问题，明确说"资料中未找到相关信息"
+- 引用具体来源
+- 回答简洁有条理，用中文`;
+
+    const answer = await callDeepSeek([
+      { role: 'system', content: '你是基于知识库的问答助手，回答简洁准确，引用来源。' },
+      { role: 'user', content: answerPrompt },
+    ], { temperature: 0.3, max_tokens: 1000 });
+
+    // 5. 返回
+    res.json({
+      success: true,
+      question: query,
+      answer: answer.trim(),
+      sourceDocs: contextChunks.map(c => ({
+        title: c.title,
+        source: c.source,
+        snippet: c.chunk_text.slice(0, 150),
+        relevance: c.relevance || null,
+      })),
+      chunksUsed: contextChunks.length,
+      watermark: 'GY',
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'RAG 问答失败',
+      error: err.message,
+      watermark: 'GY',
+    });
+  }
+});
+
 // ==================== 静态页面 ====================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -733,6 +981,38 @@ async function initDatabase() {
     console.log('✅ 已插入 categories 示例数据');
   }
 
+  // ----- RAG 知识库表 -----
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS knowledge_chunks (
+      id          INT             NOT NULL AUTO_INCREMENT,
+      title       VARCHAR(500)    NOT NULL,
+      chunk_text  TEXT            NOT NULL,
+      chunk_index INT             DEFAULT 0,
+      source      VARCHAR(200)    DEFAULT '',
+      created_at  DATETIME        DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      FULLTEXT INDEX ft_chunk_text (chunk_text)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  // 检查是否有示例知识库数据
+  const [kbCount] = await pool.execute('SELECT COUNT(*) AS count FROM knowledge_chunks');
+  if (kbCount[0].count === 0) {
+    await pool.execute(
+      'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
+      ['GY API 简介', 'GY·通用CRUD API是一个基于Express和MySQL的数据库管理工具，支持任意表的增删改查操作，内置AI智能搜索功能。', 0, '使用说明']
+    );
+    await pool.execute(
+      'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
+      ['GY API 技术栈', '本项目使用Node.js + Express 5作为Web框架，MySQL 8.0作为数据库，mysql2作为数据库驱动。AI功能接入DeepSeek V4 Flash API。', 0, '使用说明']
+    );
+    await pool.execute(
+      'INSERT INTO knowledge_chunks (title, chunk_text, chunk_index, source) VALUES (?, ?, ?, ?)',
+      ['GY API 启动方式', '打开终端进入项目目录，执行 npm start 启动服务，然后在浏览器访问 http://localhost:3000 即可使用。按 Ctrl+C 停止服务器。', 0, '使用说明']
+    );
+    console.log('✅ 已插入知识库示例数据');
+  }
+
   console.log('✅ 数据库初始化完成');
 }
 
@@ -764,6 +1044,14 @@ initDatabase()
   PUT    /api/:table/:id       - 更新行（按主键）
   PATCH  /api/:table/:id       - 部分更新行（按主键）
   DELETE /api/:table/:id       - 删除行（按主键）
+
+  ── 🤖 AI 智能搜索 ─────────────────────
+  POST  /api/ai/search         - 自然语言查数据库
+
+  ── 📚 RAG 知识库问答 ─────────────────
+  POST  /api/rag/documents     - 上传文档到知识库
+  GET   /api/rag/documents     - 查看知识库文档列表
+  POST  /api/rag/ask           - 基于知识库问答
 
   ── 示例 ───────────────────────────────
   curl http://localhost:${PORT}/api/users

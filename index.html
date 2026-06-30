@@ -304,6 +304,9 @@
             <tr><td><span class="method-tag method-PUT">PUT</span></td><td>/api/:table/:id</td></tr>
             <tr><td><span class="method-tag method-DELETE">DELETE</span></td><td>/api/:table/:id</td></tr>
             <tr><td><span class="method-tag method-POST">POST</span></td><td>/api/ai/search</td></tr>
+            <tr><td><span class="method-tag method-POST">POST</span></td><td>/api/rag/documents</td></tr>
+            <tr><td><span class="method-tag method-GET">GET</span></td><td>/api/rag/documents</td></tr>
+            <tr><td><span class="method-tag method-POST">POST</span></td><td>/api/rag/ask</td></tr>
           </table>
         </div>
       </div>
@@ -324,6 +327,37 @@
           </div>
           <div id="aiResult" style="display:none;margin-top:8px;font-size:14px"></div>
           <div id="aiSql" style="display:none;margin-top:6px;padding:6px 10px;background:#f5f5f5;border-radius:6px;font-family:monospace;font-size:12px;color:#666;overflow-x:auto"></div>
+        </div>
+      </div>
+
+      <!-- 📚 RAG 知识库 -->
+      <div class="card">
+        <div class="card-header">
+          <span>📚 RAG 知识库</span>
+          <span class="watermark-badge">RAG</span>
+        </div>
+        <div class="card-body" style="padding:14px">
+          <!-- 上传 -->
+          <div class="form-group">
+            <label>上传文档到知识库</label>
+            <div style="display:flex;gap:6px">
+              <input id="ragTitle" class="form-control" placeholder="文档标题" style="width:80px;flex-shrink:0">
+              <textarea id="ragContent" class="form-control" placeholder="粘贴文档内容..." style="flex:1;min-height:36px;height:36px;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input id="ragSource" class="form-control" placeholder="来源（可选）" style="flex:1">
+              <button class="btn btn-sm btn-success" onclick="ragUpload()">📤 导入</button>
+            </div>
+          </div>
+          <!-- 知识库状态 -->
+          <div id="ragStatus" style="font-size:13px;color:#888;margin-top:6px;cursor:pointer" onclick="ragList()">📖 加载知识库状态...</div>
+          <!-- RAG 问答 -->
+          <div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid #eee;padding-top:8px">
+            <input id="ragQuery" class="form-control" placeholder="问知识库..." style="flex:1" onkeydown="if(event.key==='Enter')ragAsk()">
+            <button class="btn btn-sm btn-primary" onclick="ragAsk()">💬 提问</button>
+          </div>
+          <div id="ragResult" style="display:none;margin-top:6px;font-size:14px"></div>
+          <div id="ragSources" style="display:none;margin-top:4px;font-size:12px;color:#888"></div>
         </div>
       </div>
     </div>
@@ -750,8 +784,87 @@ async function aiSearch() {
   }
 }
 
+// ==================== RAG 知识库 ====================
+async function ragUpload() {
+  const title = $('ragTitle').value.trim();
+  const content = $('ragContent').value.trim();
+  if (!title || !content) { showAlert('请填写标题和内容', 'danger'); return; }
+
+  try {
+    const res = await fetch(API + '/api/rag/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content, source: $('ragSource').value.trim() || '' }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    showAlert(json.message);
+    $('ragContent').value = '';
+    ragList();
+    showResponse(json);
+  } catch (e) {
+    showAlert('导入失败: ' + e.message, 'danger');
+  }
+}
+
+async function ragList() {
+  const statusEl = $('ragStatus');
+  try {
+    const res = await fetch(API + '/api/rag/documents');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    if (json.count === 0) {
+      statusEl.innerHTML = '📖 知识库为空，上传文档开始构建知识库';
+    } else {
+      statusEl.innerHTML = '📖 知识库：<strong>' + json.count + '</strong> 篇文档，<strong>' + json.totalChunks + '</strong> 个知识块' +
+        '&nbsp;&nbsp;<span style="font-size:12px;color:#999">点击刷新</span>';
+    }
+  } catch {
+    statusEl.innerHTML = '📖 加载失败';
+  }
+}
+
+async function ragAsk() {
+  const query = $('ragQuery').value.trim();
+  if (!query) { showAlert('请输入问题', 'danger'); return; }
+
+  const resultDiv = $('ragResult');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<div class="loading" style="padding:8px"><div class="spinner"></div></div>';
+  $('ragSources').style.display = 'none';
+
+  try {
+    const res = await fetch(API + '/api/rag/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+
+    // 显示回答
+    let html = '<div style="padding:8px 10px;background:#e8f4fd;border-radius:8px;border-left:3px solid #0f3460">🤖 ';
+    html += json.answer.replace(/\n/g, '<br>');
+    html += '</div>';
+    resultDiv.innerHTML = html;
+
+    // 显示来源
+    if (json.sourceDocs && json.sourceDocs.length > 0) {
+      const srcEl = $('ragSources');
+      srcEl.style.display = 'block';
+      srcEl.innerHTML = '<span style="font-weight:500">📎 参考来源：</span>' +
+        json.sourceDocs.map(s => '<span style="background:#f0f0f0;padding:1px 6px;border-radius:4px;margin:2px">' + escHtml(s.source || s.title) + '</span>').join(' ');
+    }
+
+    showResponse(json);
+  } catch (e) {
+    resultDiv.innerHTML = '<div style="padding:8px 12px;background:#f8d7da;border-radius:8px;color:#721c24">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+
 // ==================== Init ====================
 refreshTables();
+ragList();
 
 // Enter 键关闭 modal
 document.addEventListener('keydown', e => {
