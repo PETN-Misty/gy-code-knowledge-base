@@ -1,5 +1,23 @@
-node_modules/
-.env
+# 全局忽略
 .DS_Store
 *.log
 .idea/
+
+# Node.js 项目
+node_modules/
+
+# 环境变量（所有项目）
+**/.env
+
+# Java / Gradle 构建产物
+**/build/
+**/.gradle/
+**/out/
+*.class
+*.jar
+*.war
+
+# IDE 项目文件
+**/.iml
+**/*.ipr
+**/*.iws

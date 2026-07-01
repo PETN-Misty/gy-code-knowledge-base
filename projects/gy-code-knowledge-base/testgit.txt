@@ -1,0 +1,1 @@
+Git 是一个分布式版本控制系统。常用命令包括：git init 初始化仓库，git add 添加文件到暂存区，git commit 提交更改，git push 推送到远程仓库，git pull 拉取远程更新。
