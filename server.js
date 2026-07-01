@@ -11,18 +11,21 @@ const PORT = 3000;
 // 解析 JSON 请求体
 app.use(express.json());
 
-// ==================== GY 水印中间件 ====================
-// 在所有 JSON 响应中注入 watermark 字段
-app.use((req, res, next) => {
-  const originalJson = res.json.bind(res);
-  res.json = function (body) {
-    if (body && typeof body === 'object' && !Buffer.isBuffer(body)) {
-      body.watermark = 'GY';
-    }
-    return originalJson(body);
-  };
-  next();
-});
+// ==================== 运行时水印 ====================
+// 在终端输出框起来的 GY 艺术字水印
+function printWatermark() {
+  const art = `
+╔══════════════════════════════════════════════════╗
+║                                                  ║
+║     ██████   ██   ██                             ║
+║    ██         ██ ██                              ║
+║    ██  ███     ███                               ║
+║    ██   ██     ██                                ║
+║     ██████     ██                                ║
+║                                                  ║
+╚══════════════════════════════════════════════════╝`;
+  console.log(art);
+}
 
 // MySQL 连接配置
 const DB_CONFIG = {
@@ -212,6 +215,94 @@ async function callDeepSeek(messages, options = {}) {
   return data.choices?.[0]?.message?.content || '';
 }
 
+// ==================== 本地向量化引擎（n-gram TF-IDF）====================
+//
+// 用 character n-gram (1~4-gram) + TF-IDF + 余弦相似度做语义检索
+// 纯本地计算，零依赖，零 API 调用
+
+let vectorIndex = null; // { idf: {ngram: weight}, chunks: [{id, vector: {ngram: w}}] }
+
+/** 提取字符 n-gram 及其词频（1~4-gram，sublinear TF） */
+function extractNgrams(text) {
+  const cleaned = text.replace(/[\s\n\r\t]+/g, '');
+  const freqs = {};
+  for (let n = 1; n <= 4; n++) {
+    for (let i = 0; i <= cleaned.length - n; i++) {
+      const ng = cleaned.slice(i, i + n);
+      freqs[ng] = (freqs[ng] || 0) + 1;
+    }
+  }
+  for (const ng in freqs) freqs[ng] = 1 + Math.log(freqs[ng]); // sublinear TF
+  return freqs;
+}
+
+/** 从语料构建 IDF */
+function buildIDF(chunks) {
+  const N = chunks.length;
+  const df = {};
+  for (const c of chunks) {
+    const ngrams = extractNgrams(c.chunk_text);
+    const seen = new Set(Object.keys(ngrams));
+    for (const ng of seen) df[ng] = (df[ng] || 0) + 1;
+  }
+  const idf = {};
+  for (const [ng, count] of Object.entries(df)) {
+    idf[ng] = Math.log((N + 1) / (count + 1)) + 1;
+  }
+  return idf;
+}
+
+/** 用 TF-IDF 将文本转为稀疏向量 */
+function textToVector(text, idf) {
+  const tf = extractNgrams(text);
+  const vec = {};
+  for (const [ng, tfVal] of Object.entries(tf)) {
+    if (idf[ng]) vec[ng] = tfVal * idf[ng];
+  }
+  return vec;
+}
+
+/** 稀疏向量余弦相似度 */
+function sparseCosineSim(a, b) {
+  let dot = 0, magA = 0, magB = 0;
+  const keys = Object.keys(a).length < Object.keys(b).length
+    ? Object.keys(a) : Object.keys(b);
+  for (const k of keys) {
+    const va = a[k] || 0;
+    const vb = b[k] || 0;
+    dot += va * vb;
+    magA += va * va;
+    magB += vb * vb;
+  }
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+/** 从数据库重新构建向量索引 */
+async function rebuildVectorIndex() {
+  const [rows] = await pool.execute('SELECT id, chunk_text FROM knowledge_chunks');
+  if (rows.length === 0) { vectorIndex = null; return 0; }
+  const idf = buildIDF(rows);
+  vectorIndex = {
+    idf,
+    chunks: rows.map(r => ({
+      id: r.id,
+      vector: textToVector(r.chunk_text, idf),
+    })),
+  };
+  return rows.length;
+}
+
+/** 向量检索：查询 → 返回按相似度排序的 chunk id 列表 */
+function vectorSearch(query, topK = 5) {
+  if (!vectorIndex) return [];
+  const qVec = textToVector(query, vectorIndex.idf);
+  const scored = vectorIndex.chunks
+    .map(c => ({ id: c.id, score: sparseCosineSim(qVec, c.vector) }))
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, topK);
+}
+
 /**
  * POST /api/ai/search
  * 自然语言查询数据库
@@ -282,7 +373,6 @@ ${schemaContext}
         explanation: parsed.explanation || aiReply,
         data: [],
         sql: null,
-        watermark: 'GY',
       });
     }
 
@@ -328,14 +418,12 @@ SQL：${parsed.sql}
       answer: answer.trim(),
       count,
       data: rows,
-      watermark: 'GY',
     });
   } catch (err) {
     res.status(500).json({
       success: false,
       message: 'AI 查询失败',
       error: err.message,
-      watermark: 'GY',
     });
   }
 });
@@ -403,14 +491,17 @@ app.post('/api/rag/documents', async (req, res) => {
       inserted++;
     }
 
+    // 重新构建本地向量索引
+    await rebuildVectorIndex();
+
     res.status(201).json({
       success: true,
       message: `文档「${title}」已导入，共 ${inserted} 个知识块`,
       chunks: inserted,
-      watermark: 'GY',
+      vectorized: true,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: '导入失败', error: err.message, watermark: 'GY' });
+    res.status(500).json({ success: false, message: '导入失败', error: err.message });
   }
 });
 
@@ -434,10 +525,9 @@ app.get('/api/rag/documents', async (req, res) => {
       count: rows.length,
       totalChunks: total[0].total,
       data: rows,
-      watermark: 'GY',
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: '查询失败', error: err.message, watermark: 'GY' });
+    res.status(500).json({ success: false, message: '查询失败', error: err.message });
   }
 });
 
@@ -450,14 +540,57 @@ app.delete('/api/rag/documents/:title', async (req, res) => {
     const { title } = req.params;
     const [result] = await pool.execute('DELETE FROM knowledge_chunks WHERE title = ?', [title]);
 
+    // 重建向量索引
+    await rebuildVectorIndex();
+
     res.json({
       success: true,
       message: `已删除文档「${title}」(${result.affectedRows} 个知识块)`,
       affectedRows: result.affectedRows,
-      watermark: 'GY',
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: '删除失败', error: err.message, watermark: 'GY' });
+    res.status(500).json({ success: false, message: '删除失败', error: err.message });
+  }
+});
+
+/**
+ * GET /api/rag/export
+ * 导出知识库为 Markdown 文件下载
+ */
+app.get('/api/rag/export', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT title, chunk_text, source, chunk_index FROM knowledge_chunks ORDER BY title, chunk_index'
+    );
+
+    if (rows.length === 0) {
+      return res.json({ success: false, message: '知识库为空，无内容可导出' });
+    }
+
+    // 按标题分组生成 Markdown
+    const docs = new Map();
+    for (const row of rows) {
+      if (!docs.has(row.title)) docs.set(row.title, []);
+      docs.get(row.title).push(row);
+    }
+
+    let md = `# GY 知识库导出\n> 导出时间: ${new Date().toLocaleString()}\n> 文档数: ${docs.size} · 知识块数: ${rows.length}\n\n---\n\n`;
+
+    for (const [title, chunks] of docs) {
+      const source = chunks[0].source || '';
+      md += `# ${title}\n\n`;
+      if (source) md += `> 来源: ${source}\n\n`;
+      for (const chunk of chunks) {
+        md += `${chunk.chunk_text}\n\n`;
+      }
+      md += `---\n\n`;
+    }
+
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="knowledge-base-${Date.now()}.md"`);
+    res.send(md);
+  } catch (err) {
+    res.status(500).json({ success: false, message: '导出失败', error: err.message });
   }
 });
 
@@ -474,74 +607,87 @@ app.post('/api/rag/ask', async (req, res) => {
       return res.status(400).json({ success: false, message: '请输入问题' });
     }
 
-    // 1. 全文检索：用 MySQL FULLTEXT 搜索最相关的知识块
-    const cleanQuery = query.replace(/[^一-龥a-zA-Z0-9\s]/g, ' ');
-    let chunks = [];
-
-    if (cleanQuery.trim()) {
-      const limit = Math.min(topK * 2, 20);
-      const sql =
-        `SELECT id, title, chunk_text, source, chunk_index,
-                MATCH(chunk_text) AGAINST(?) AS relevance
-         FROM knowledge_chunks
-         WHERE MATCH(chunk_text) AGAINST(?)
-         ORDER BY relevance DESC
-         LIMIT ${limit}`;
-      const [rows] = await pool.query(sql, [cleanQuery, cleanQuery]);
-      chunks = rows;
-    }
-
-    // 如果全文检索没结果，用 LIKE 模糊匹配兜底
-    if (chunks.length === 0) {
-      const fallbackLimit = Math.min(topK * 2, 20);
-      const [rows] = await pool.execute(
-        `SELECT id, title, chunk_text, source, chunk_index, 0 AS relevance
-         FROM knowledge_chunks
-         WHERE chunk_text LIKE ? OR chunk_text LIKE ? OR chunk_text LIKE ?
-         LIMIT ${fallbackLimit}`,
-        [`%${query}%`, `%${query.slice(0, 10)}%`, `%${query.slice(0, 5)}%`]
-      );
-      chunks = rows;
-    }
-
-    // 2. 如果知识库为空，引导用户上传文档
+    // 1. 检查知识库是否为空
     const [totalChunks] = await pool.execute('SELECT COUNT(*) AS c FROM knowledge_chunks');
     if (totalChunks[0].c === 0) {
       return res.json({
         success: true,
-        answer: '📚 知识库还没有内容。请先上传文档（POST /api/rag/documents），我才能回答你的问题。',
+        answer: '📚 知识库还没有内容。请先上传文档，我才能回答你的问题。',
         sourceDocs: [],
-        watermark: 'GY',
+        method: 'vector',
       });
     }
 
-    // 3. 用 DeepSeek 对 chunks 做相关性重排序（取 topK）
-    let contextChunks = chunks.slice(0, Math.min(topK, chunks.length));
+    // 2. 向量检索
+    let contextChunks = [];
 
-    if (chunks.length > topK) {
-      // 让 AI 选出最相关的 chunks
-      const rerankPrompt = `从以下知识块中选出与问题最相关的 ${topK} 条（只返回序号，逗号分隔）：
+    try {
+      // 2a. 用本地 n-gram TF-IDF 向量检索
+      const scoredIds = vectorSearch(query, topK);
 
-问题：${query}
+      if (scoredIds.length > 0) {
+        // 2b. 从数据库取完整信息
+        const placeholders = scoredIds.map(() => '?').join(',');
+        const [rows] = await pool.execute(
+          `SELECT id, title, chunk_text, source, chunk_index FROM knowledge_chunks WHERE id IN (${placeholders})`,
+          scoredIds.map(s => s.id)
+        );
+        // 按相似度排序还原
+        const rowMap = Object.fromEntries(rows.map(r => [r.id, r]));
+        contextChunks = scoredIds
+          .map(s => ({ ...rowMap[s.id], relevance: s.score }))
+          .filter(c => c.chunk_text);
 
-${chunks.map((c, i) => `[${i}] ${c.chunk_text.slice(0, 200)}`).join('\n\n')}`;
-
-      try {
-        const rerankResult = await callDeepSeek([
-          { role: 'system', content: '你是一个检索排序助手。根据问题相关性，选出最相关的知识块序号，只返回数字（逗号分隔）。' },
-          { role: 'user', content: rerankPrompt },
-        ], { temperature: 0.05, max_tokens: 100 });
-
-        const indices = rerankResult.match(/\d+/g)?.map(Number).filter(i => i < chunks.length).slice(0, topK);
-        if (indices && indices.length > 0) {
-          contextChunks = indices.map(i => chunks[i]);
+        // 2c. 如果结果太少，用关键词补充
+        if (contextChunks.length < topK) {
+          const limit = topK - contextChunks.length;
+          const existingIds = contextChunks.map(c => c.id);
+          const excludeClause = existingIds.length > 0
+            ? 'AND id NOT IN (' + existingIds.map(() => '?').join(',') + ')'
+            : '';
+          const [fallback] = await pool.execute(
+            `SELECT id, title, chunk_text, source, chunk_index, 0 AS relevance
+             FROM knowledge_chunks
+             WHERE (chunk_text LIKE ? OR chunk_text LIKE ?) ${excludeClause}
+             LIMIT ${limit}`,
+            [`%${query.slice(0, 15)}%`, `%${query.slice(0, 10)}%`, ...existingIds]
+          );
+          contextChunks = [...contextChunks, ...fallback];
         }
-      } catch {
-        // 重排序失败，直接用前 topK 条
+      } else {
+        // 2d. 向量索引为空，降级关键词
+        const limit = Math.min(topK * 2, 20);
+        const [fallback] = await pool.execute(
+          `SELECT id, title, chunk_text, source, chunk_index, 0 AS relevance
+           FROM knowledge_chunks WHERE chunk_text LIKE ? OR chunk_text LIKE ?
+           LIMIT ${limit}`,
+          [`%${query.slice(0, 15)}%`, `%${query.slice(0, 10)}%`]
+        );
+        contextChunks = fallback.slice(0, topK);
       }
+    } catch (err) {
+      console.warn('⚠️ 向量检索失败，降级为关键词搜索：', err.message);
+
+      const limit = Math.min(topK * 2, 20);
+      const [fallback] = await pool.execute(
+        `SELECT id, title, chunk_text, source, chunk_index, 0 AS relevance
+         FROM knowledge_chunks WHERE chunk_text LIKE ? OR chunk_text LIKE ?
+         LIMIT ${limit}`,
+        [`%${query.slice(0, 15)}%`, `%${query.slice(0, 10)}%`]
+      );
+      contextChunks = fallback.slice(0, topK);
     }
 
-    // 4. 拼 context → 调 DeepSeek 生成回答
+    if (contextChunks.length === 0) {
+      return res.json({
+        success: true,
+        answer: '📚 知识库中未找到与问题相关的资料，请尝试换一种问法或上传更多文档。',
+        sourceDocs: [],
+        method: 'vector',
+      });
+    }
+
+    // 3. 拼 context → 调 DeepSeek 生成回答
     const context = contextChunks.map(c =>
       `【来源：${c.source || c.title}】${c.chunk_text}`
     ).join('\n\n');
@@ -564,11 +710,12 @@ ${context}
       { role: 'user', content: answerPrompt },
     ], { temperature: 0.3, max_tokens: 1000 });
 
-    // 5. 返回
+    // 4. 返回
     res.json({
       success: true,
       question: query,
       answer: answer.trim(),
+      method: 'vector',
       sourceDocs: contextChunks.map(c => ({
         title: c.title,
         source: c.source,
@@ -576,14 +723,12 @@ ${context}
         relevance: c.relevance || null,
       })),
       chunksUsed: contextChunks.length,
-      watermark: 'GY',
     });
   } catch (err) {
     res.status(500).json({
       success: false,
       message: 'RAG 问答失败',
       error: err.message,
-      watermark: 'GY',
     });
   }
 });
@@ -1265,8 +1410,7 @@ class Student {
       chunk_index INT             DEFAULT 0,
       source      VARCHAR(200)    DEFAULT '',
       created_at  DATETIME        DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      FULLTEXT INDEX ft_chunk_text (chunk_text)
+      PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -1287,6 +1431,10 @@ class Student {
     );
     console.log('✅ 已插入知识库示例数据');
   }
+
+  // 构建本地向量索引
+  const n = await rebuildVectorIndex();
+  if (n > 0) console.log(`🧠 本地向量索引已构建（${n} 个知识块，${Object.keys(vectorIndex.idf).length} 个特征）`);
 
   console.log('✅ 数据库初始化完成');
 }
@@ -1340,6 +1488,7 @@ initDatabase()
   &_page=1&_size=20     - 分页
 ====================================================
       `);
+      printWatermark();
     });
   })
   .catch((err) => {
