@@ -306,7 +306,7 @@ function vectorSearch(query, topK = 5) {
 /**
  * POST /api/ai/search
  * 自然语言查询数据库
- * 请求: { query: "找30岁以上的用户", table?: "users" }
+ * 请求: { query: "请输入文本", table?: "users" }
  * 返回: { sql, data, answer }
  */
 app.post('/api/ai/search', async (req, res) => {
