@@ -491,6 +491,283 @@
 
     /* ===== Select ===== */
     select.form-control { appearance: auto; }
+
+    /* ===== Page Switching ===== */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ===== Navigation Tabs ===== */
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      margin-left: 20px;
+    }
+    .nav-tab {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255,255,255,.1);
+      color: rgba(255,255,255,.7);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all .2s;
+    }
+    .nav-tab:hover { background: rgba(255,255,255,.2); color: #fff; }
+    .nav-tab.active {
+      background: rgba(255,255,255,.2);
+      color: #fff;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.3);
+    }
+
+    /* ===== Chat Layout ===== */
+    .chat-layout {
+      display: flex;
+      height: calc(100vh - 64px);
+      max-width: 100%;
+    }
+    .chat-sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #e8e8e8;
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-sidebar-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #e8e8e8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .chat-sidebar-title { font-weight: 600; font-size: 15px; }
+    .chat-session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .chat-session-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: all .15s;
+    }
+    .chat-session-item:hover { background: #f0f2f8; }
+    .chat-session-item.active { background: #e8edf8; }
+    .chat-session-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #1a1a2e;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-session-preview {
+      font-size: 12px;
+      color: #999;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-session-meta {
+      font-size: 11px;
+      color: #bbb;
+      margin-top: 2px;
+      display: flex;
+      gap: 8px;
+    }
+    .chat-session-delete {
+      float: right;
+      opacity: 0;
+      transition: opacity .15s;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      color: #e94560;
+      padding: 2px;
+    }
+    .chat-session-item:hover .chat-session-delete { opacity: 1; }
+
+    /* ===== Chat Main ===== */
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f8f9fc;
+      min-width: 0;
+    }
+    .chat-empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      text-align: center;
+    }
+    .chat-empty-icon { font-size: 64px; margin-bottom: 16px; opacity: .3; }
+    .chat-empty-title { font-size: 20px; font-weight: 600; color: #333; margin-bottom: 8px; }
+    .chat-empty-desc { font-size: 14px; color: #999; max-width: 360px; line-height: 1.5; }
+
+    /* ===== Chat Header ===== */
+    .chat-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid #e8e8e8;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .chat-header-title { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+    .chat-header-info { font-size: 13px; color: #888; display: flex; align-items: center; gap: 8px; }
+
+    /* ===== Chat Messages ===== */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chat-empty-msg {
+      text-align: center;
+      color: #ccc;
+      font-size: 14px;
+      padding: 40px;
+    }
+    .chat-message {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .chat-message.user {
+      align-self: flex-end;
+      background: #0f3460;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-message.ai {
+      align-self: flex-start;
+      background: #fff;
+      color: #1a1a2e;
+      border: 1px solid #e8e8e8;
+      border-bottom-left-radius: 4px;
+    }
+    .chat-message.ai pre {
+      margin: 8px 0;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .chat-message.ai pre code {
+      font-size: 13px;
+      padding: 12px !important;
+    }
+    .chat-message.ai p { margin: 4px 0; }
+    .chat-message.ai ul, .chat-message.ai ol { margin: 4px 0; padding-left: 20px; }
+    .chat-message.ai h1, .chat-message.ai h2, .chat-message.ai h3 { font-size: inherit; font-weight: 600; margin: 8px 0 4px; }
+    .chat-message .msg-role-icon { margin-right: 6px; }
+    .chat-message.ai .msg-prompt-btn {
+      float: right;
+      opacity: .3;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      color: #888;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: opacity .15s;
+    }
+    .chat-message.ai:hover .msg-prompt-btn { opacity: .8; }
+    .chat-message.ai .msg-prompt-btn:hover { background: #f0f0f0; opacity: 1; }
+
+    /* ===== Chat Input ===== */
+    .chat-input-area {
+      padding: 12px 20px;
+      border-top: 1px solid #e8e8e8;
+      background: #fff;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    .chat-input {
+      flex: 1;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      min-height: 44px;
+      max-height: 150px;
+      line-height: 1.5;
+      transition: border-color .2s;
+    }
+    .chat-input:focus { outline: none; border-color: #0f3460; }
+    .chat-send-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      background: #0f3460;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .2s;
+      white-space: nowrap;
+    }
+    .chat-send-btn:hover { background: #1a4a7a; }
+    .chat-send-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .chat-send-btn.loading { opacity: .7; pointer-events: none; }
+
+    /* ===== Chat Loading ===== */
+    .chat-loading {
+      align-self: flex-start;
+      display: flex;
+      gap: 6px;
+      padding: 12px 16px;
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+    }
+    .chat-loading-dot {
+      width: 8px; height: 8px;
+      background: #888;
+      border-radius: 50%;
+      animation: chatBounce 1.2s infinite;
+    }
+    .chat-loading-dot:nth-child(2) { animation-delay: .2s; }
+    .chat-loading-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes chatBounce {
+      0%, 80%, 100% { transform: scale(.6); opacity: .4; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* ===== Responsive Chat ===== */
+    @media (max-width: 768px) {
+      .chat-sidebar { width: 200px; }
+      .chat-message { max-width: 95%; }
+      .nav-tabs { margin-left: 8px; }
+      .nav-tab { padding: 4px 10px; font-size: 12px; }
+    }
+    @media (max-width: 500px) {
+      .chat-layout { flex-direction: column; }
+      .chat-sidebar { width: 100%; height: auto; max-height: 160px; border-right: none; border-bottom: 1px solid #e8e8e8; }
+      .chat-session-list { max-height: 100px; }
+    }
   </style>
 </head>
 <body>
@@ -502,6 +779,10 @@
       GY · 代码知识库
       <small>Code Learning Hub</small>
     </h1>
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-page="knowledge" onclick="switchPage('knowledge')">📚 知识库</button>
+      <button class="nav-tab" data-page="chat" onclick="switchPage('chat')">💬 AI 对话</button>
+    </nav>
   </div>
   <span class="badge">💻 学编程 · 查代码 · 用 AI</span>
 </header>
@@ -510,6 +791,7 @@
 <div id="alert" class="alert"></div>
 
 <!-- ===== Container ===== -->
+<div id="page-knowledge" class="page active">
 <div class="container">
 
   <!-- ===== Sidebar ===== -->
@@ -656,6 +938,75 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button id="modalSubmit" class="btn btn-primary" onclick="submitModal()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ===== AI 对话页面 ===== -->
+<div id="page-chat" class="page">
+  <div class="chat-layout">
+    <!-- 左侧：会话列表 -->
+    <div class="chat-sidebar">
+      <div class="chat-sidebar-header">
+        <span class="chat-sidebar-title">💬 对话历史</span>
+        <button class="btn btn-sm btn-primary" onclick="createChatSession()">➕ 新对话</button>
+      </div>
+      <div id="chatSessionList" class="chat-session-list">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- 右侧：聊天区域 -->
+    <div class="chat-main">
+      <!-- 未选择对话 -->
+      <div id="chatEmptyState" class="chat-empty-state">
+        <div class="chat-empty-icon">💬</div>
+        <div class="chat-empty-title">AI 代码解析助手</div>
+        <div class="chat-empty-desc">创建新对话，粘贴代码让 AI 解析，或询问编程问题</div>
+        <button class="btn btn-primary" onclick="createChatSession()" style="margin-top:12px;font-size:15px;padding:10px 24px">➕ 创建新对话</button>
+      </div>
+
+      <!-- 对话主区域 -->
+      <div id="chatArea" class="chat-area" style="display:none">
+        <div class="chat-header">
+          <div class="chat-header-title">
+            <span id="chatSessionTitle">新对话</span>
+            <button class="btn-icon" onclick="renameChatSession()" title="重命名">✏️</button>
+            <button class="btn-icon" onclick="deleteChatSession(currentSessionId)" title="删除" style="color:#e94560">🗑️</button>
+          </div>
+          <div class="chat-header-info">
+            <span id="chatMsgCount">0 条消息</span>
+            <button class="btn btn-sm btn-ghost" onclick="loadChatSessions()">🔄</button>
+          </div>
+        </div>
+
+        <div id="chatMessages" class="chat-messages">
+          <div class="chat-empty-msg">发送一条消息开始对话</div>
+        </div>
+
+        <div class="chat-input-area">
+          <textarea id="chatInput" class="chat-input" placeholder="输入代码或问题…（Shift+Enter 换行，Enter 发送）" onkeydown="chatInputKeydown(event)"></textarea>
+          <button class="chat-send-btn" onclick="sendChatMessage()">发送 ➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 提示词查看弹窗 ===== -->
+<div id="promptModal" class="modal-overlay">
+  <div class="modal" style="max-width:800px">
+    <div class="modal-header">
+      <span>🧠 提示词记录</span>
+      <button class="close" onclick="closePromptModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="promptContent" style="white-space:pre-wrap;font-size:13px;line-height:1.6;background:#f5f5f5;padding:16px;border-radius:8px;max-height:60vh;overflow-y:auto;font-family:monospace"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closePromptModal()">关闭</button>
     </div>
   </div>
 </div>
@@ -1206,8 +1557,357 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ==================== Esc key ====================
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closePromptModal(); }
 });
+
+// ==================== Chat AI Helper ====================
+
+/**
+ * Render markdown-like text to HTML with code highlighting
+ */
+function renderChatContent(text) {
+  // Split by code blocks first
+  let html = '';
+  let lastIdx = 0;
+  const blockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+  let match;
+
+  while ((match = blockRegex.exec(text)) !== null) {
+    // Text before this code block
+    const before = text.slice(lastIdx, match.index);
+    if (before.trim()) {
+      html += '<p>' + escHtml(before).replace(/\n/g, '<br>') + '</p>';
+    }
+
+    const lang = match[1] || '';
+    const code = match[2];
+    html += '<pre><code class="language-' + (lang || 'plaintext') + '">' + escHtml(code.trim()) + '</code></pre>';
+    lastIdx = match.index + match[0].length;
+  }
+
+  // Remaining text after last code block
+  const after = text.slice(lastIdx);
+  if (after.trim()) {
+    html += '<p>' + escHtml(after).replace(/\n/g, '<br>') + '</p>';
+  }
+
+  return html;
+}
+
+/**
+ * Highlight code blocks in the chat area
+ */
+function highlightChatCode() {
+  document.querySelectorAll('#chatMessages pre code').forEach(b => {
+    try { hljs.highlightElement(b); } catch(e) { /* ignore */ }
+  });
+}
+
+// ===== Page Navigation =====
+function switchPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector('.nav-tab[data-page="' + page + '"]').classList.add('active');
+  if (page === 'chat') loadChatSessions();
+}
+
+// ===== Chat State =====
+let chatSessions = [];
+let currentSessionId = null;
+let chatMessages = [];
+let isSending = false;
+
+// ===== Chat Sessions =====
+async function loadChatSessions() {
+  const list = $('chatSessionList');
+  try {
+    const res = await fetch(API + '/api/chat/sessions');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    chatSessions = json.data || [];
+    renderChatSessions();
+  } catch (e) {
+    list.innerHTML = '<div style="padding:12px;color:#e94560;font-size:13px">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderChatSessions() {
+  const list = $('chatSessionList');
+  if (chatSessions.length === 0) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px">暂无对话<br><span style="font-size:12px">点击上方创建</span></div>';
+    return;
+  }
+  list.innerHTML = chatSessions.map(s => {
+    const isActive = s.id === currentSessionId;
+    const msgLabel = s.msg_count > 0 ? s.msg_count + ' 条' : '空';
+    return '<div class="chat-session-item' + (isActive ? ' active' : '') + '" onclick="selectChatSession(' + s.id + ')">' +
+      '<button class="chat-session-delete" onclick="event.stopPropagation();deleteChatSession(' + s.id + ')" title="删除">✕</button>' +
+      '<div class="chat-session-title">' + escHtml(s.title) + '</div>' +
+      (s.last_preview ? '<div class="chat-session-preview">' + (s.last_role === 'user' ? '👤 ' : '🤖 ') + escHtml(s.last_preview) + '</div>' : '') +
+      '<div class="chat-session-meta"><span>' + msgLabel + '</span></div>' +
+      '</div>';
+  }).join('');
+}
+
+async function createChatSession() {
+  try {
+    const res = await fetch(API + '/api/chat/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '新对话' }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    currentSessionId = json.data.id;
+    chatMessages = [];
+    await loadChatSessions();
+    showChatArea();
+    $('chatSessionTitle').textContent = '新对话';
+    $('chatMsgCount').textContent = '0 条消息';
+    $('chatMessages').innerHTML = '<div class="chat-empty-msg">发送一条消息开始对话</div>';
+    $('chatInput').value = '';
+    $('chatInput').focus();
+    scrollChatToBottom();
+  } catch (e) {
+    showAlert('创建对话失败: ' + e.message, 'danger');
+  }
+}
+
+async function deleteChatSession(id) {
+  if (!confirm('确定删除此对话吗？（消息将一并删除）')) return;
+  try {
+    const res = await fetch(API + '/api/chat/sessions/' + id, { method: 'DELETE' });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    if (currentSessionId === id) {
+      currentSessionId = null;
+      chatMessages = [];
+      $('chatArea').style.display = 'none';
+      $('chatEmptyState').style.display = 'flex';
+    }
+    await loadChatSessions();
+    showAlert('✅ 对话已删除');
+  } catch (e) {
+    showAlert('删除失败: ' + e.message, 'danger');
+  }
+}
+
+async function renameChatSession() {
+  if (!currentSessionId) return;
+  const currentTitle = $('chatSessionTitle').textContent;
+  const newTitle = prompt('重命名对话：', currentTitle);
+  if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return;
+  try {
+    const res = await fetch(API + '/api/chat/sessions/' + currentSessionId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle.trim() }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    $('chatSessionTitle').textContent = newTitle.trim();
+    await loadChatSessions();
+    showAlert('✅ 已重命名');
+  } catch (e) {
+    showAlert('重命名失败: ' + e.message, 'danger');
+  }
+}
+
+function selectChatSession(id) {
+  if (currentSessionId === id) return;
+  currentSessionId = id;
+  renderChatSessions();
+  loadChatMessages(id);
+}
+
+function showChatArea() {
+  $('chatEmptyState').style.display = 'none';
+  $('chatArea').style.display = 'flex';
+  $('chatArea').style.flexDirection = 'column';
+}
+
+// ===== Chat Messages =====
+async function loadChatMessages(sessionId) {
+  const msgArea = $('chatMessages');
+  msgArea.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(API + '/api/chat/sessions/' + sessionId + '/messages');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    chatMessages = json.data || [];
+    showChatArea();
+    $('chatSessionTitle').textContent = json.session.title;
+    $('chatMsgCount').textContent = chatMessages.length + ' 条消息';
+    renderChatMessages();
+  } catch (e) {
+    msgArea.innerHTML = '<div style="padding:20px;text-align:center;color:#e94560">❌ ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderChatMessages() {
+  const msgArea = $('chatMessages');
+  if (chatMessages.length === 0) {
+    msgArea.innerHTML = '<div class="chat-empty-msg">发送一条消息开始对话</div>';
+    return;
+  }
+  msgArea.innerHTML = chatMessages.map(msg => {
+    const role = msg.role === 'user' ? 'user' : 'ai';
+    const icon = msg.role === 'user' ? '👤' : '🤖';
+    const content = msg.role === 'assistant' ? renderChatContent(msg.content) : '<p>' + escHtml(msg.content).replace(/\n/g, '<br>') + '</p>';
+    const promptBtn = msg.role === 'assistant' && msg.prompt_info
+      ? '<button class="msg-prompt-btn" onclick="showPromptInfo(' + msg.id + ')" title="查看提示词记录">🧠</button>'
+      : '';
+    return '<div class="chat-message ' + role + '">' +
+      promptBtn +
+      '<span class="msg-role-icon">' + icon + '</span> ' +
+      content +
+      '</div>';
+  }).join('');
+  scrollChatToBottom();
+  setTimeout(highlightChatCode, 100);
+}
+
+function scrollChatToBottom() {
+  const msgArea = $('chatMessages');
+  setTimeout(() => { msgArea.scrollTop = msgArea.scrollHeight; }, 50);
+}
+
+// ===== Send Message =====
+function chatInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+}
+
+async function sendChatMessage() {
+  const input = $('chatInput');
+  const message = input.value.trim();
+  if (!message) return;
+  if (!currentSessionId) {
+    showAlert('请先创建或选择一个对话', 'danger');
+    return;
+  }
+  if (isSending) return;
+
+  isSending = true;
+  const sendBtn = document.querySelector('.chat-send-btn');
+  sendBtn.classList.add('loading');
+  sendBtn.textContent = '...';
+
+  // Show user message immediately
+  chatMessages.push({ role: 'user', content: message });
+  const msgArea = $('chatMessages');
+  const userBubble = '<div class="chat-message user"><span class="msg-role-icon">👤</span> <p>' + escHtml(message).replace(/\n/g, '<br>') + '</p></div>';
+  // Remove empty state if present
+  const emptyMsg = msgArea.querySelector('.chat-empty-msg');
+  if (emptyMsg) msgArea.innerHTML = '';
+  msgArea.insertAdjacentHTML('beforeend', userBubble);
+  scrollChatToBottom();
+  input.value = '';
+
+  // Show loading dots
+  const loadingHTML = '<div class="chat-loading" id="chatLoading"><div class="chat-loading-dot"></div><div class="chat-loading-dot"></div><div class="chat-loading-dot"></div></div>';
+  msgArea.insertAdjacentHTML('beforeend', loadingHTML);
+  scrollChatToBottom();
+
+  try {
+    const res = await fetch(API + '/api/chat/sessions/' + currentSessionId + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+
+    // Remove loading
+    const loading = $('chatLoading');
+    if (loading) loading.remove();
+
+    // Add AI response
+    const aiContent = renderChatContent(json.message);
+    const promptInfo = json.promptInfo ? 'data-prompt=\'' + JSON.stringify(json.promptInfo).replace(/'/g, '&#39;') + '\'' : '';
+    const aiBubble = '<div class="chat-message ai">' +
+      '<button class="msg-prompt-btn" onclick="showPromptInfoFromData(this)" title="查看提示词记录">🧠</button>' +
+      '<span class="msg-role-icon">🤖</span> ' + aiContent +
+      '</div>';
+    msgArea.insertAdjacentHTML('beforeend', aiBubble);
+    scrollChatToBottom();
+    setTimeout(highlightChatCode, 100);
+
+    // Update session list and message count
+    $('chatMsgCount').textContent = (chatMessages.length + 1) + ' 条消息';
+    chatMessages.push({ role: 'assistant', content: json.message, prompt_info: json.promptInfo });
+    await loadChatSessions();
+  } catch (e) {
+    const loading = $('chatLoading');
+    if (loading) loading.remove();
+    const errHTML = '<div class="chat-message ai" style="background:#fef0f0;border-color:#e94560">' +
+      '<span class="msg-role-icon">❌</span> <p>请求失败：' + escHtml(e.message) + '</p></div>';
+    msgArea.insertAdjacentHTML('beforeend', errHTML);
+    scrollChatToBottom();
+  }
+
+  isSending = false;
+  sendBtn.classList.remove('loading');
+  sendBtn.textContent = '发送 ➤';
+  input.focus();
+}
+
+// ===== Prompt Info =====
+function showPromptInfo(messageId) {
+  const msg = chatMessages.find(m => m.id === messageId);
+  if (!msg || !msg.prompt_info) return;
+  const info = msg.prompt_info;
+  let content = '=== 系统提示词 ===\n\n' + (info.system_prompt || '(无)') +
+    '\n\n=== 用户消息 ===\n\n' + (info.last_user_message || '(无)') +
+    '\n\n=== 调用参数 ===\n' +
+    '模型: ' + (info.model || 'deepseek-chat') + '\n' +
+    '温度: ' + (info.temperature || 0.3) + '\n' +
+    '最大Token: ' + (info.max_tokens || 2000) + '\n' +
+    '上下文消息数: ' + (info.messages_in_context || '?') + '\n' +
+    '时间: ' + (info.timestamp || '(无)');
+  $('promptContent').textContent = content;
+  $('promptModal').classList.add('show');
+}
+
+function showPromptInfoFromData(btn) {
+  // Find the parent AI message - the prompt info was stored when rendering
+  // We need to get it from the chatMessages array by finding the matching AI message
+  const allAIMsgs = chatMessages.filter(m => m.role === 'assistant' && m.prompt_info);
+  // Get the index of this button relative to AI messages
+  const aiBubbles = document.querySelectorAll('.chat-message.ai');
+  let idx = -1;
+  for (let i = 0; i < aiBubbles.length; i++) {
+    if (aiBubbles[i].contains(btn)) { idx = i; break; }
+  }
+  // Find the corresponding prompt_info
+  let promptInfo = null;
+  let count = 0;
+  for (const m of chatMessages) {
+    if (m.role === 'assistant' && m.prompt_info) {
+      if (count === idx) { promptInfo = m.prompt_info; break; }
+      count++;
+    }
+  }
+  if (!promptInfo) return;
+  // Render
+  let content = '=== 系统提示词 ===\n\n' + (promptInfo.system_prompt || '(无)') +
+    '\n\n=== 用户消息 ===\n\n' + (promptInfo.last_user_message || '(无)') +
+    '\n\n=== 调用参数 ===\n' +
+    '模型: ' + (promptInfo.model || 'deepseek-chat') + '\n' +
+    '温度: ' + (promptInfo.temperature || 0.3) + '\n' +
+    '最大Token: ' + (promptInfo.max_tokens || 2000) + '\n' +
+    '上下文消息数: ' + (promptInfo.messages_in_context || '?') + '\n' +
+    '时间: ' + (promptInfo.timestamp || '(无)');
+  $('promptContent').textContent = content;
+  $('promptModal').classList.add('show');
+}
+
+function closePromptModal() {
+  $('promptModal').classList.remove('show');
+}
 
 // ==================== Start ====================
 init();

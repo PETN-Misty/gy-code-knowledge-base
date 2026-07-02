@@ -8,7 +8,7 @@
 
 | 目录 | 项目 | 技术栈 | 说明 |
 |-----|------|-------|------|
-| `projects/gy-code-knowledge-base/` | GY 代码知识库 | Node.js + Express + MySQL | 代码片段管理 + AI 搜索 + RAG 知识库问答 |
+| `projects/gy-code-knowledge-base/` | GY 代码知识库 | Node.js + Express + MySQL + DeepSeek | 代码片段管理 · AI 搜索 · RAG 知识库问答 · AI 代码解析对话 |
 | `projects/demo-java/` | Spring Boot Demo | Java + Spring Boot + Gradle | 入门示例项目 |
 
 ---

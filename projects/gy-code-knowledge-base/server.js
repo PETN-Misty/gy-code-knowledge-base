@@ -2,8 +2,8 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const path = require('path');
 
-// 加载 .env 配置（必须放在所有使用之前）
-require('dotenv').config();
+// 加载 .env 配置（从 monorepo 根目录加载）
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 const PORT = 3000;
@@ -733,6 +733,285 @@ ${context}
   }
 });
 
+// ==================== AI 对话助手 (DeepSeek V4 Flash) ====================
+
+/**
+ * AI 代码解析助手的系统提示词
+ * 聚焦代码解析，同时支持通用对话
+ */
+const CHAT_SYSTEM_PROMPT = `你是一个专业的代码解析 AI 助手，擅长代码分析、调试和学习指导。
+
+## 🎯 代码解析（核心能力）
+- 逐行解释代码的逻辑、意图和执行流程
+- 分析时间复杂度和空间复杂度
+- 识别使用的算法、数据结构和设计模式
+- 解释不常见或晦涩的语法特性
+- 指出可能被忽视的边界条件和隐含行为
+
+## 🐛 调试帮助
+- 找出代码中潜在的 bug、逻辑错误和边界问题
+- 分析异常堆栈和错误信息
+- 建议具体的修复方案并解释修复原理
+
+## ⚡ 代码优化
+- 性能优化建议（减少复杂度、缓存、并行化等）
+- 可读性和可维护性改进（命名、结构、注释）
+- 安全最佳实践（输入校验、防止注入等）
+
+## 📚 学习指导
+- 用通俗易懂的方式解释编程概念
+- 对比不同实现方式的优劣
+- 推荐相关学习资源和进阶方向
+
+## 输出要求
+- 请用中文回答
+- 代码块请使用 Markdown 格式（\`\`\`语言名）标注
+- 复杂概念尽量用例子说明
+- 不确定的地方要明确说明"不确定"`;
+
+/**
+ * GET /api/chat/sessions
+ * 获取所有对话列表（含最后一条消息预览）
+ */
+app.get('/api/chat/sessions', async (req, res) => {
+  try {
+    const [sessions] = await pool.execute(`
+      SELECT s.id, s.title, s.created_at, s.updated_at,
+        (SELECT content FROM chat_messages WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1) AS last_message,
+        (SELECT role FROM chat_messages WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1) AS last_role,
+        (SELECT COUNT(*) FROM chat_messages WHERE session_id = s.id) AS msg_count
+      FROM chat_sessions s
+      ORDER BY s.updated_at DESC
+    `);
+
+    const data = sessions.map(s => ({
+      ...s,
+      last_preview: s.last_message
+        ? s.last_message.slice(0, 80) + (s.last_message.length > 80 ? '...' : '')
+        : null,
+    }));
+
+    res.json({ success: true, count: data.length, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取对话列表失败', error: err.message });
+  }
+});
+
+/**
+ * POST /api/chat/sessions
+ * 创建新对话
+ * 请求: { title?: string }
+ */
+app.post('/api/chat/sessions', async (req, res) => {
+  try {
+    const { title } = req.body;
+    const [result] = await pool.execute(
+      'INSERT INTO chat_sessions (title) VALUES (?)',
+      [title || '新对话']
+    );
+
+    res.status(201).json({
+      success: true,
+      message: '对话已创建',
+      data: { id: result.insertId, title: title || '新对话' },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '创建对话失败', error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/chat/sessions/:id
+ * 重命名对话
+ * 请求: { title: string }
+ */
+app.patch('/api/chat/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ success: false, message: '请输入标题' });
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE chat_sessions SET title = ? WHERE id = ?',
+      [title.trim(), id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: '对话不存在' });
+    }
+
+    res.json({ success: true, message: '已重命名' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '重命名失败', error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/chat/sessions/:id
+ * 删除对话（级联删除所有消息）
+ */
+app.delete('/api/chat/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute('DELETE FROM chat_sessions WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: '对话不存在' });
+    }
+
+    res.json({ success: true, message: '对话已删除' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '删除失败', error: err.message });
+  }
+});
+
+/**
+ * GET /api/chat/sessions/:id/messages
+ * 获取某个对话的所有消息
+ */
+app.get('/api/chat/sessions/:id/messages', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [sessions] = await pool.execute('SELECT id, title FROM chat_sessions WHERE id = ?', [id]);
+    if (sessions.length === 0) {
+      return res.status(404).json({ success: false, message: '对话不存在' });
+    }
+
+    const [messages] = await pool.execute(
+      `SELECT id, role, content, prompt_info, created_at
+       FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC`,
+      [id]
+    );
+
+    // 解析 prompt_info JSON
+    const data = messages.map(m => ({
+      ...m,
+      prompt_info: m.prompt_info ? (typeof m.prompt_info === 'string' ? JSON.parse(m.prompt_info) : m.prompt_info) : null,
+    }));
+
+    res.json({
+      success: true,
+      session: sessions[0],
+      count: data.length,
+      data,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取消息失败', error: err.message });
+  }
+});
+
+/**
+ * POST /api/chat/sessions/:id/chat
+ * 发送消息到 AI 对话（含完整提示词记录）
+ * 请求: { message: string }
+ */
+app.post('/api/chat/sessions/:id/chat', async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ success: false, message: '请输入消息内容' });
+    }
+
+    const trimmedMessage = message.trim();
+
+    // 1. 检查 session 是否存在
+    const [sessions] = await pool.execute('SELECT * FROM chat_sessions WHERE id = ?', [sessionId]);
+    if (sessions.length === 0) {
+      return res.status(404).json({ success: false, message: '对话不存在' });
+    }
+    const session = sessions[0];
+
+    // 2. 先保存用户消息到数据库
+    const userPromptInfo = JSON.stringify({
+      type: 'user_input',
+      timestamp: new Date().toISOString(),
+    });
+
+    const [userMsgResult] = await pool.execute(
+      'INSERT INTO chat_messages (session_id, role, content, prompt_info) VALUES (?, ?, ?, ?)',
+      [sessionId, 'user', trimmedMessage, userPromptInfo]
+    );
+
+    // 3. 获取历史消息（最多 20 条，控制 token 数）
+    const [history] = await pool.execute(
+      `SELECT role, content FROM chat_messages
+       WHERE session_id = ? AND role IN ('user', 'assistant')
+       ORDER BY created_at ASC LIMIT 20`,
+      [sessionId]
+    );
+
+    // 4. 构建完整对话上下文
+    const conversation = [
+      { role: 'system', content: CHAT_SYSTEM_PROMPT },
+      ...history.map(m => ({ role: m.role, content: m.content })),
+    ];
+
+    // 5. 调用 DeepSeek API
+    const aiReply = await callDeepSeek(conversation, {
+      temperature: 0.3,
+      max_tokens: 2000,
+    });
+
+    const trimmedReply = aiReply.trim();
+
+    // 6. 保存 AI 回复（含完整提示词记录）
+    const aiPromptInfo = JSON.stringify({
+      system_prompt: CHAT_SYSTEM_PROMPT,
+      last_user_message: trimmedMessage,
+      messages_in_context: conversation.length,
+      model: AI_CONFIG.model,
+      temperature: 0.3,
+      max_tokens: 2000,
+      timestamp: new Date().toISOString(),
+    });
+
+    await pool.execute(
+      'INSERT INTO chat_messages (session_id, role, content, prompt_info) VALUES (?, ?, ?, ?)',
+      [sessionId, 'assistant', trimmedReply, aiPromptInfo]
+    );
+
+    // 7. 自动生成标题（仅在首次对话时）
+    if (session.title === '新对话') {
+      try {
+        const titlePrompt = `用 5-10 个字概括以下对话的主题，只输出标题本身，不要引号和标点：\n用户：${trimmedMessage.slice(0, 100)}\nAI：${trimmedReply.slice(0, 150)}`;
+
+        const generatedTitle = await callDeepSeek([
+          { role: 'system', content: '你是一个标题生成器。用5-10个字概括对话主题，只输出标题。' },
+          { role: 'user', content: titlePrompt },
+        ], { temperature: 0.1, max_tokens: 30 });
+
+        const cleanTitle = generatedTitle.replace(/[""'']/g, '').trim().slice(0, 50);
+        if (cleanTitle && cleanTitle !== '新对话') {
+          await pool.execute('UPDATE chat_sessions SET title = ? WHERE id = ?', [cleanTitle, sessionId]);
+        }
+      } catch (e) {
+        // 标题生成失败不影响主流程
+      }
+    }
+
+    // 8. 返回 AI 回复及提示词记录
+    res.json({
+      success: true,
+      userMessageId: userMsgResult.insertId,
+      message: trimmedReply,
+      promptInfo: JSON.parse(aiPromptInfo),
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'AI 回复失败',
+      error: err.message,
+    });
+  }
+});
+
 // ==================== 静态页面 ====================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -1432,6 +1711,33 @@ class Student {
     console.log('✅ 已插入知识库示例数据');
   }
 
+  // ----- AI 对话表 -----
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id          INT             NOT NULL AUTO_INCREMENT,
+      title       VARCHAR(200)    NOT NULL DEFAULT '新对话',
+      created_at  DATETIME        DEFAULT CURRENT_TIMESTAMP,
+      updated_at  DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id          INT             NOT NULL AUTO_INCREMENT,
+      session_id  INT             NOT NULL,
+      role        VARCHAR(20)     NOT NULL COMMENT 'user / assistant / system',
+      content     TEXT            NOT NULL,
+      prompt_info JSON            NULL     COMMENT '调用 AI 时的完整提示词记录',
+      created_at  DATETIME        DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_session (session_id),
+      CONSTRAINT fk_chat_session FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  console.log('✅ AI 对话表已就绪');
+
   // 构建本地向量索引
   const n = await rebuildVectorIndex();
   if (n > 0) console.log(`🧠 本地向量索引已构建（${n} 个知识块，${Object.keys(vectorIndex.idf).length} 个特征）`);
@@ -1472,6 +1778,14 @@ initDatabase()
   POST  /api/rag/documents          - 上传文档到知识库
   GET   /api/rag/documents          - 查看知识库文档列表
   POST  /api/rag/ask                - 基于知识库问答
+
+  ── 💬 AI 代码解析对话 ─────────────────
+  POST  /api/chat/sessions          - 创建新对话
+  GET   /api/chat/sessions          - 对话列表（含预览）
+  PATCH /api/chat/sessions/:id      - 重命名对话
+  DELETE /api/chat/sessions/:id     - 删除对话
+  GET   /api/chat/sessions/:id/messages - 查看对话历史
+  POST  /api/chat/sessions/:id/chat - 发送消息（AI 解析 + 提示词记录）
 
   ── 示例查询 ─────────────────────────────
   curl http://localhost:${PORT}/api/code_snippets
