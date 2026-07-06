@@ -471,6 +471,112 @@
       color: #888;
     }
 
+    /* ===== KB Toggle ===== */
+    .chat-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 20px;
+      border-top: 1px solid #e8e8e8;
+      background: #fafafa;
+      flex-shrink: 0;
+    }
+    .kb-toggle-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .kb-toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .kb-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .kb-toggle .slider {
+      position: absolute;
+      inset: 0;
+      background: #ddd;
+      border-radius: 20px;
+      transition: all .25s;
+      cursor: pointer;
+    }
+    .kb-toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: all .25s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    }
+    .kb-toggle input:checked + .slider {
+      background: #0f3460;
+    }
+    .kb-toggle input:checked + .slider::before {
+      transform: translateX(16px);
+    }
+    .kb-toggle-label {
+      font-size: 13px;
+      color: #999;
+      white-space: nowrap;
+      transition: color .2s;
+    }
+    .kb-toggle-label.active {
+      color: #0f3460;
+      font-weight: 500;
+    }
+    .kb-hint {
+      font-size: 11px;
+      color: #bbb;
+      transition: all .2s;
+    }
+    .kb-hint.active {
+      color: #0f3460;
+    }
+
+    /* ===== KB Sources in Chat ===== */
+    .kb-sources {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid #e8e8e8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .kb-sources-label {
+      font-size: 11px;
+      color: #aaa;
+      white-space: nowrap;
+    }
+    .kb-source-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: #e8f4fd;
+      color: #0f3460;
+      cursor: default;
+    }
+    .kb-no-result {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #bbb;
+      padding-top: 6px;
+      border-top: 1px solid #f0f0f0;
+    }
+
     /* ===== Responsive ===== */
     @media (max-width: 900px) {
       .container { flex-direction: column; }
@@ -986,7 +1092,19 @@
           <div class="chat-empty-msg">发送一条消息开始对话</div>
         </div>
 
-        <div class="chat-input-area">
+      <!-- 知识库开关工具栏 -->
+      <div class="chat-tools">
+        <label class="kb-toggle-wrap" onclick="event.stopPropagation()">
+          <span class="kb-toggle">
+            <input type="checkbox" id="kbToggle" onchange="toggleKb()">
+            <span class="slider"></span>
+          </span>
+          <span id="kbToggleLabel" class="kb-toggle-label">📚 参考知识库</span>
+        </label>
+        <span id="kbHint" class="kb-hint">每次发送将自动检索知识库</span>
+      </div>
+
+      <div class="chat-input-area">
           <textarea id="chatInput" class="chat-input" placeholder="输入代码或问题…（Shift+Enter 换行，Enter 发送）" onkeydown="chatInputKeydown(event)"></textarea>
           <button class="chat-send-btn" onclick="sendChatMessage()">发送 ➤</button>
         </div>
@@ -1617,6 +1735,25 @@ let chatSessions = [];
 let currentSessionId = null;
 let chatMessages = [];
 let isSending = false;
+let useKb = false;
+
+// ===== KB Toggle =====
+function toggleKb() {
+  useKb = document.getElementById('kbToggle').checked;
+  const label = document.getElementById('kbToggleLabel');
+  const hint = document.getElementById('kbHint');
+  if (useKb) {
+    label.classList.add('active');
+    label.innerHTML = '📚 参考知识库（已开启）';
+    hint.classList.add('active');
+    hint.textContent = '每次发送将自动检索知识库';
+  } else {
+    label.classList.remove('active');
+    label.innerHTML = '📚 参考知识库';
+    hint.classList.remove('active');
+    hint.textContent = '每次发送将自动检索知识库';
+  }
+}
 
 // ===== Chat Sessions =====
 async function loadChatSessions() {
@@ -1758,10 +1895,25 @@ function renderChatMessages() {
     const promptBtn = msg.role === 'assistant' && msg.prompt_info
       ? '<button class="msg-prompt-btn" onclick="showPromptInfo(' + msg.id + ')" title="查看提示词记录">🧠</button>'
       : '';
+
+    // KB sources for historical messages
+    let kbHtml = '';
+    if (msg.role === 'assistant' && msg.prompt_info) {
+      const pi = typeof msg.prompt_info === 'string' ? JSON.parse(msg.prompt_info) : msg.prompt_info;
+      if (pi.kb_used && pi.kb_sources && pi.kb_sources.length > 0) {
+        const tags = pi.kb_sources.map(s =>
+          '<span class="kb-source-tag">📎 ' + escHtml(s.source || s.title) + '</span>'
+        ).join(' ');
+        kbHtml = '<div class="kb-sources"><span class="kb-sources-label">📚 参考知识库</span>' + tags + '</div>';
+      } else if (pi.kb_used && (!pi.kb_sources || pi.kb_sources.length === 0)) {
+        kbHtml = '<div class="kb-no-result">📚 知识库未找到相关参考资料</div>';
+      }
+    }
+
     return '<div class="chat-message ' + role + '">' +
       promptBtn +
       '<span class="msg-role-icon">' + icon + '</span> ' +
-      content +
+      content + kbHtml +
       '</div>';
   }).join('');
   scrollChatToBottom();
@@ -1816,7 +1968,7 @@ async function sendChatMessage() {
     const res = await fetch(API + '/api/chat/sessions/' + currentSessionId + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, use_kb: useKb }),
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.message);
@@ -1826,8 +1978,16 @@ async function sendChatMessage() {
     if (loading) loading.remove();
 
     // Add AI response
-    const aiContent = renderChatContent(json.message);
-    const promptInfo = json.promptInfo ? 'data-prompt=\'' + JSON.stringify(json.promptInfo).replace(/'/g, '&#39;') + '\'' : '';
+    let aiContent = renderChatContent(json.message);
+    // KB sources display
+    if (json.kbUsed && json.kbSources && json.kbSources.length > 0) {
+      const tags = json.kbSources.map(s =>
+        '<span class="kb-source-tag">📎 ' + escHtml(s.source || s.title) + (s.relevance ? ' ' + s.relevance + '%' : '') + '</span>'
+      ).join(' ');
+      aiContent += '<div class="kb-sources"><span class="kb-sources-label">📚 参考知识库</span>' + tags + '</div>';
+    } else if (json.kbUsed && (!json.kbSources || json.kbSources.length === 0)) {
+      aiContent += '<div class="kb-no-result">📚 知识库未找到相关参考资料</div>';
+    }
     const aiBubble = '<div class="chat-message ai">' +
       '<button class="msg-prompt-btn" onclick="showPromptInfoFromData(this)" title="查看提示词记录">🧠</button>' +
       '<span class="msg-role-icon">🤖</span> ' + aiContent +
@@ -1867,6 +2027,10 @@ function showPromptInfo(messageId) {
     '温度: ' + (info.temperature || 0.3) + '\n' +
     '最大Token: ' + (info.max_tokens || 2000) + '\n' +
     '上下文消息数: ' + (info.messages_in_context || '?') + '\n' +
+        (promptInfo.kb_used ? '参考知识库: ' + (promptInfo.kb_source_count > 0 ? '是 (' + promptInfo.kb_source_count + ' 条资料)' : '是 (未找到匹配)') : '参考知识库: 否') + '
+' +
+        (info.kb_used ? '参考知识库: ' + (info.kb_source_count > 0 ? '是 (' + info.kb_source_count + ' 条资料)' : '是 (未找到匹配)') : '参考知识库: 否') + '
+' +
     '时间: ' + (info.timestamp || '(无)');
   $('promptContent').textContent = content;
   $('promptModal').classList.add('show');

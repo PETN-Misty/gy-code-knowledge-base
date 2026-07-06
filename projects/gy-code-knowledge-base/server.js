@@ -733,6 +733,49 @@ ${context}
   }
 });
 
+// ==================== 知识库关键词匹配 ====================
+// 用于判断用户问题是否与知识库内容相关，避免不必要检索
+const KB_RELEVANT_KEYWORDS = [
+  // 编程语言
+  'javascript', 'js', 'typescript', 'ts', 'python', 'py', 'java', 'go', 'golang',
+  'rust', 'rs', 'c++', 'cpp', 'c#', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
+  // 中文编程相关
+  '编程', '代码', '脚本', '程序', '开发',
+  // 算法与数据结构
+  '排序', '算法', '数据结构', '查找', '搜索', '递归', '迭代', '遍历',
+  '冒泡', '二分', '哈希', '链表', '栈', '队列', '树', '图',
+  // 编程概念
+  '函数', '方法', '类', '对象', '接口', '继承', '闭包', '异步', '同步',
+  'promise', '回调', 'callback', 'await', 'async', '事件循环',
+  '并发', '并行', 'goroutine', '线程', '进程', '协程', '锁',
+  '设计模式', '模式', '工厂', '单例', '观察者', 'mvc',
+  '变量', '作用域', '原型', '原型链', '继承',
+  // Web 与框架
+  'api', 'rest', 'http', '路由', '中间件', 'middleware', 'express', 'koa',
+  'node', 'nodejs', 'react', 'vue', 'angular', 'jquery',
+  'html', 'css', 'dom',
+  // 数据库
+  'mysql', '数据库', 'sql', '查询', '表', '索引', '事务',
+  // 工具与工程
+  'git', 'npm', 'webpack', 'docker', 'ci', '部署', '测试', '单元测试',
+  // 调试与优化
+  'bug', '调试', 'debug', '性能', '优化', '错误', '异常', '报错',
+  'error', 'exception', '栈溢出', '内存泄漏',
+  // 学习相关
+  '示例', '例子', '教程', '学习', '入门', '进阶', '指南',
+  '什么是', '怎么用', '如何', '用法', '为什么',
+  // 代码操作
+  '代码', '写代码', '改代码', '重构', 'review', '审查',
+];
+
+/**
+ * 判断用户问题是否与知识库内容相关
+ */
+function isKbRelevant(query) {
+  const lower = query.toLowerCase();
+  return KB_RELEVANT_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 // ==================== AI 对话助手 (DeepSeek V4 Flash) ====================
 
 /**
@@ -913,7 +956,7 @@ app.get('/api/chat/sessions/:id/messages', async (req, res) => {
 app.post('/api/chat/sessions/:id/chat', async (req, res) => {
   try {
     const sessionId = parseInt(req.params.id);
-    const { message } = req.body;
+    const { message, use_kb } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ success: false, message: '请输入消息内容' });
@@ -939,6 +982,29 @@ app.post('/api/chat/sessions/:id/chat', async (req, res) => {
       [sessionId, 'user', trimmedMessage, userPromptInfo]
     );
 
+    // 2.5 知识库检索（use_kb 开启时）
+    let kbSources = null;
+    let kbUsed = false;
+    if (use_kb && isKbRelevant(trimmedMessage)) {
+      kbUsed = true;
+      try {
+        const scoredIds = vectorSearch(trimmedMessage, 3);
+        if (scoredIds && scoredIds.length > 0) {
+          const placeholders = scoredIds.map(() => '?').join(',');
+          const [rows] = await pool.execute(
+            `SELECT id, title, chunk_text, source FROM knowledge_chunks WHERE id IN (${placeholders})`,
+            scoredIds.map(s => s.id)
+          );
+          const rowMap = Object.fromEntries(rows.map(r => [r.id, r]));
+          kbSources = scoredIds
+            .map(s => ({ ...rowMap[s.id], relevance: Math.round(s.score * 100) }))
+            .filter(c => c.chunk_text);
+        }
+      } catch (err) {
+        console.warn('⚠️ 对话知识库检索失败:', err.message);
+      }
+    }
+
     // 3. 获取历史消息（最多 20 条，控制 token 数）
     const [history] = await pool.execute(
       `SELECT role, content FROM chat_messages
@@ -947,9 +1013,19 @@ app.post('/api/chat/sessions/:id/chat', async (req, res) => {
       [sessionId]
     );
 
-    // 4. 构建完整对话上下文
+    // 4. 构建完整对话上下文（含知识库注入）
+    let enhancedSystemPrompt = CHAT_SYSTEM_PROMPT;
+    if (kbSources && kbSources.length > 0) {
+      const context = kbSources.map(c =>
+        `【${c.source || c.title}】${c.chunk_text}`
+      ).join('\n\n');
+      enhancedSystemPrompt += `\n\n## 📚 知识库参考资料\n以下内容来自知识库，请参考它们回答用户问题（如不相关可忽略）：\n${context}`;
+    } else if (kbUsed) {
+      enhancedSystemPrompt += `\n\n## 📚 知识库提示\n用户开启了知识库参考，但未找到相关内容。请在回答末尾说明"📚 知识库未找到相关参考资料"。`;
+    }
+
     const conversation = [
-      { role: 'system', content: CHAT_SYSTEM_PROMPT },
+      { role: 'system', content: enhancedSystemPrompt },
       ...history.map(m => ({ role: m.role, content: m.content })),
     ];
 
@@ -963,12 +1039,15 @@ app.post('/api/chat/sessions/:id/chat', async (req, res) => {
 
     // 6. 保存 AI 回复（含完整提示词记录）
     const aiPromptInfo = JSON.stringify({
-      system_prompt: CHAT_SYSTEM_PROMPT,
+      system_prompt: enhancedSystemPrompt,
       last_user_message: trimmedMessage,
       messages_in_context: conversation.length,
       model: AI_CONFIG.model,
       temperature: 0.3,
       max_tokens: 2000,
+      kb_used: kbUsed,
+      kb_source_count: kbSources ? kbSources.length : 0,
+      kb_sources: kbSources ? kbSources.map(s => ({ title: s.title, source: s.source })) : [],
       timestamp: new Date().toISOString(),
     });
 
@@ -1002,6 +1081,8 @@ app.post('/api/chat/sessions/:id/chat', async (req, res) => {
       userMessageId: userMsgResult.insertId,
       message: trimmedReply,
       promptInfo: JSON.parse(aiPromptInfo),
+      kbUsed,
+      kbSources: kbSources || [],
     });
   } catch (err) {
     res.status(500).json({
